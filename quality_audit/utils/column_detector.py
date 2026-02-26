@@ -5,10 +5,26 @@ Provides enhanced pattern matching for detecting financial columns,
 including year patterns, currency symbols, and multi-language support.
 """
 
+import logging
 import re
-from typing import Optional, Tuple
+from enum import Enum
+from typing import Dict, Optional, Tuple
 
 import pandas as pd
+
+from .numeric_utils import compute_numeric_evidence_score
+
+logger = logging.getLogger(__name__)
+
+
+class ColumnType(Enum):
+    """Column classification for financial tables (Phase 5)."""
+
+    TEXT = "TEXT"
+    CODE = "CODE"
+    NUMERIC_CY = "NUMERIC_CY"
+    NUMERIC_PY = "NUMERIC_PY"
+    OTHER = "OTHER"
 
 
 class ColumnDetector:
@@ -93,6 +109,16 @@ class ColumnDetector:
                         year = int(year_match.group())
                         year_matches.append((idx, col, year))
 
+        # Deduplicate matches per column (same column can match multiple patterns)
+        if year_matches:
+            by_col: dict[int, tuple[int, str, int]] = {}
+            for tup in year_matches:
+                i, c, y = tup
+                # Keep the max year for that column (should be identical, but defensive)
+                if i not in by_col or y > by_col[i][2]:
+                    by_col[i] = tup
+            year_matches = list(by_col.values())
+
         # Sort by year (descending) to get current year first
         if year_matches:
             year_matches.sort(key=lambda x: x[2], reverse=True)
@@ -101,11 +127,8 @@ class ColumnDetector:
             elif len(year_matches) == 1:
                 # Only one year found, use it as current year
                 cur_col = year_matches[0][1]
-                # Try to find prior year in adjacent columns
-                cur_idx = year_matches[0][0]
-                if cur_idx > 0:
-                    prior_col = columns[cur_idx - 1]
-                    return cur_col, prior_col
+                # No reliable prior-year inference from adjacency (often "Code"/"Account").
+                return cur_col, None
 
         # Strategy 2: Financial term matching
         cur_year_terms = [
@@ -134,10 +157,58 @@ class ColumnDetector:
         if cur_col_candidate and prior_col_candidate:
             return cur_col_candidate, prior_col_candidate
 
-        # Strategy 3: Position-based fallback (last two columns)
-        # This matches the original behavior
+        # Strategy 3: Evaluate last K columns by numeric evidence; return best adjacent pair or (None, None)
         if len(columns) >= 2:
-            return columns[-2], columns[-1]
+            k = min(5, len(columns))
+            last_k = list(columns[-k:])
+            evidence = compute_numeric_evidence_score(
+                df, candidate_columns=last_k, sample_rows=20
+            )
+            per_col = evidence.get("per_column") or {}
+            threshold = (
+                0.2  # Group 1/3/4: lowered from 0.25 to reduce NO_NUMERIC_EVIDENCE
+            )
+            # Per-column score = max(parseable_ratio, digit_presence_ratio)
+            scores = {}
+            for col in last_k:
+                info = per_col.get(col) or {}
+                scores[col] = max(
+                    float(info.get("parseable_ratio", 0)),
+                    float(info.get("digit_presence_ratio", 0)),
+                )
+            # Rightmost adjacent pair (prior_col, cur_col) with both >= threshold
+            for i in range(len(last_k) - 1, 0, -1):
+                left_col, right_col = last_k[i - 1], last_k[i]
+                if (
+                    scores.get(left_col, 0) >= threshold
+                    and scores.get(right_col, 0) >= threshold
+                ):
+                    logger.info(
+                        "Strategy 3: selected adjacent pair %s, %s (scores %.2f, %.2f)",
+                        left_col,
+                        right_col,
+                        scores[left_col],
+                        scores[right_col],
+                    )
+                    return left_col, right_col
+            # Fallback (Group 1/4): last two columns with score >= 0.1 as CY/PY
+            if len(columns) >= 2:
+                last_two = [columns[-2], columns[-1]]
+                if all(scores.get(c, 0) >= 0.1 for c in last_two):
+                    logger.info(
+                        "Strategy 3 fallback: using last two columns %s, %s (scores %.2f, %.2f)",
+                        last_two[0],
+                        last_two[1],
+                        scores.get(last_two[0], 0),
+                        scores.get(last_two[1], 0),
+                    )
+                    return last_two[0], last_two[1]
+            logger.info(
+                "Strategy 3: no adjacent pair in last %d columns with numeric evidence >= %.2f",
+                k,
+                threshold,
+            )
+            return None, None
 
         return None, None
 
@@ -229,3 +300,41 @@ class ColumnDetector:
             except ValueError:
                 return None
         return None
+
+    @staticmethod
+    def classify_columns(df: pd.DataFrame) -> Dict[str, ColumnType]:
+        """
+        Classify each column as TEXT, CODE, NUMERIC_CY, NUMERIC_PY, or OTHER.
+
+        Phase 5: Used by totals detection and validators to identify amount columns
+        and exclude code/text columns from sum checks.
+
+        Args:
+            df: DataFrame with table data (header row as columns).
+
+        Returns:
+            Dict mapping column name -> ColumnType.
+        """
+        if df.empty:
+            return {}
+        columns = [str(c).strip() for c in df.columns]
+        result: Dict[str, ColumnType] = {}
+        code_col = ColumnDetector.detect_code_column(df)
+        cur_col, prior_col = ColumnDetector.detect_financial_columns_advanced(df)
+        note_col = ColumnDetector.detect_note_column(df)
+        for col in columns:
+            if code_col and col == code_col:
+                result[col] = ColumnType.CODE
+            elif note_col and col == note_col:
+                result[col] = ColumnType.TEXT
+            elif cur_col and col == cur_col:
+                result[col] = ColumnType.NUMERIC_CY
+            elif prior_col and col == prior_col:
+                result[col] = ColumnType.NUMERIC_PY
+            elif ColumnDetector.has_year_pattern(col):
+                # Year-like but not chosen as CY/PY (e.g. third period)
+                result[col] = ColumnType.OTHER
+            else:
+                # Description, label, or unidentified
+                result[col] = ColumnType.TEXT
+        return result

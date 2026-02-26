@@ -5,8 +5,12 @@ LRU Cache Manager for cross-checking data with memory bounds and performance mon
 import threading
 import time
 from collections import OrderedDict
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Set
+from pathlib import Path
+from typing import Any, Dict, Optional, Set, Tuple
+
+from quality_audit.config.tax_rate import TaxRateConfig
 
 
 @dataclass
@@ -98,6 +102,17 @@ class LRUCacheManager:
             self.cache.move_to_end(key)
             self.stats["sets"] += 1
 
+    def __contains__(self, key: object) -> bool:
+        """
+        Support `key in cache` checks for tests and ergonomics.
+        Respects TTL eviction semantics (expired entries are treated as missing).
+        """
+        if not isinstance(key, str):
+            return False
+        # Use get() to apply TTL behavior without updating LRU stats too heavily.
+        # This is acceptable for membership checks in this project.
+        return self.get(key) is not None
+
     def delete(self, key: str) -> bool:
         """
         Delete entry from cache.
@@ -142,11 +157,6 @@ class LRUCacheManager:
                 "entries": list(self.cache.keys()),  # For debugging
             }
 
-    def __contains__(self, key: str) -> bool:
-        """Check if key exists in cache."""
-        with self.lock:
-            return key in self.cache
-
     def __len__(self) -> int:
         """Get current cache size."""
         with self.lock:
@@ -159,22 +169,132 @@ class AuditContext:
 
     This class encapsulates cache and marks in a single context object,
     enabling proper dependency injection and eliminating global state.
+
+    Concurrent-safe: Uses contextvars for run-specific state (filename, marks).
     """
 
-    def __init__(self, cache: Optional[LRUCacheManager] = None):
+    _current_filename_var: ContextVar[Optional[str]] = ContextVar(
+        "current_filename", default=None
+    )
+    _marks_var: ContextVar[Optional[Set[str]]] = ContextVar("marks", default=None)
+    _last_classification_context_var: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
+        "last_classification_context", default=None
+    )
+    _last_normalization_metadata_var: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
+        "last_normalization_metadata", default=None
+    )
+    _last_total_row_metadata_var: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
+        "last_total_row_metadata", default=None
+    )
+    _cash_flow_registry_var: ContextVar[Optional[Dict[str, Tuple[float, float]]]] = (
+        ContextVar("cash_flow_registry", default=None)
+    )
+
+    def __init__(
+        self,
+        cache: Optional[LRUCacheManager] = None,
+        tax_rate_config: Optional[TaxRateConfig] = None,
+        base_path: Optional[Path] = None,
+    ):
         """
         Initialize audit context.
 
         Args:
             cache: Cache manager instance (creates new one if not provided)
+            tax_rate_config: Configuration for tax rates
+            base_path: Base path for resolving relative paths
         """
         self.cache = cache or LRUCacheManager(max_size=1000)
-        self.marks: Set[str] = set()
+        self.tax_rate_config = tax_rate_config
+        self.base_path = base_path
+
+    @property
+    def current_filename(self) -> Optional[str]:
+        """Get the current filename for this task."""
+        return self._current_filename_var.get()
+
+    @current_filename.setter
+    def current_filename(self, value: Optional[str]):
+        """Set the current filename for this task."""
+        self._current_filename_var.set(value)
+
+    @property
+    def marks(self) -> Set[str]:
+        """Get the cross-check marks for this task."""
+        m = self._marks_var.get()
+        if m is None:
+            m = set()
+            self._marks_var.set(m)
+        return m
+
+    def get_last_classification_context(self) -> Optional[Dict[str, Any]]:
+        """Get last classification result context (set by ValidatorFactory)."""
+        return self._last_classification_context_var.get()
+
+    def set_last_classification_context(self, ctx: Optional[Dict[str, Any]]) -> None:
+        """Set last classification result context for observability."""
+        self._last_classification_context_var.set(ctx)
+
+    def get_last_normalization_metadata(self) -> Optional[Dict[str, Any]]:
+        """
+        Get last table normalization metadata.
+
+        This is populated by validators via BaseValidator._normalize_table_with_metadata
+        to support per-table observability/logging without changing validator behaviour.
+        """
+        return self._last_normalization_metadata_var.get()
+
+    def set_last_normalization_metadata(
+        self, metadata: Optional[Dict[str, Any]]
+    ) -> None:
+        """Set last table normalization metadata for observability."""
+        self._last_normalization_metadata_var.set(metadata)
+
+    def get_last_total_row_metadata(self) -> Optional[Dict[str, Any]]:
+        """
+        Get last total-row selection metadata.
+
+        This is populated by BaseValidator._find_total_row to record which strategy
+        was used to choose the total row (RowClassifier, safe_total_row_selection, legacy).
+        """
+        return self._last_total_row_metadata_var.get()
+
+    def set_last_total_row_metadata(self, metadata: Optional[Dict[str, Any]]) -> None:
+        """Set last total-row selection metadata for observability."""
+        self._last_total_row_metadata_var.set(metadata)
+
+    @property
+    def cash_flow_registry(self) -> Dict[str, Tuple[float, float]]:
+        """
+        Document-level registry for cash flow codes: code -> (current_year, prior_year).
+
+        Used when cashflow_cross_table_context feature flag is enabled to aggregate
+        values across all Cash Flow tables in a document.
+        """
+        reg = self._cash_flow_registry_var.get()
+        if reg is None:
+            reg = {}
+            self._cash_flow_registry_var.set(reg)
+        return reg
+
+    @cash_flow_registry.setter
+    def cash_flow_registry(self, value: Dict[str, Tuple[float, float]]) -> None:
+        """Set the document-level cash flow registry."""
+        self._cash_flow_registry_var.set(value)
 
     def clear(self) -> None:
-        """Clear both cache and marks."""
-        self.cache.clear()
-        self.marks.clear()
+        """
+        Clear run-specific state for this task.
+
+        Note: shared cache is NOT cleared here to prevent interference
+        in concurrent batch processing.
+        """
+        self._marks_var.set(set())
+        self._current_filename_var.set(None)
+        self._last_classification_context_var.set(None)
+        self._cash_flow_registry_var.set(None)
+        self._last_normalization_metadata_var.set(None)
+        self._last_total_row_metadata_var.set(None)
 
 
 # Global instances for backward compatibility
@@ -182,4 +302,6 @@ class AuditContext:
 # Use AuditContext with dependency injection instead.
 # Accessing these will trigger a deprecation warning in future versions.
 cross_check_cache = LRUCacheManager(max_size=1000)
-cross_check_marks = set()  # Use set for O(1) membership tests
+# Deprecated: Use AuditContext.marks instead. This global set is maintained for backward compatibility only.
+# Plan removal in future version (e.g., v3.0.0).
+cross_check_marks: Set[str] = set()  # Use set for O(1) membership tests

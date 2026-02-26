@@ -1,0 +1,152 @@
+{
+  "version": 1,
+  "description": "P1-1 Gold Set: FAIL_TOOL_EXTRACT tables for regression testing",
+  "fail_tool_extract_tables": [
+    {
+      "source_file": "CJCGV-FS2018-EN- v2 _output.xlsx",
+      "table_id": "row_7",
+      "file_name": "CJCGV-FS2018-EN- v2 _output",
+      "table_index": 6,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CJCGV-FS2018-EN- v2 _output.xlsx",
+      "table_id": "row_13",
+      "file_name": "CJCGV-FS2018-EN- v2 _output",
+      "table_index": 12,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CJCGV-FS2018-EN- v2 _output.xlsx",
+      "table_id": "row_14",
+      "file_name": "CJCGV-FS2018-EN- v2 _output",
+      "table_index": 13,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CJCGV-FS2018-EN- v2 _output.xlsx",
+      "table_id": "row_22",
+      "file_name": "CJCGV-FS2018-EN- v2 _output",
+      "table_index": 21,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CJCGV-FS2018-EN- v2 _output.xlsx",
+      "table_id": "row_27",
+      "file_name": "CJCGV-FS2018-EN- v2 _output",
+      "table_index": 26,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CJCGV-FS2018-EN- v2 _output.xlsx",
+      "table_id": "row_29",
+      "file_name": "CJCGV-FS2018-EN- v2 _output",
+      "table_index": 28,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CJCGV-FS2018-EN- v2 _output.xlsx",
+      "table_id": "row_30",
+      "file_name": "CJCGV-FS2018-EN- v2 _output",
+      "table_index": 29,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CJCGV-FS2018-EN- v2 _output.xlsx",
+      "table_id": "row_34",
+      "file_name": "CJCGV-FS2018-EN- v2 _output",
+      "table_index": 33,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CJCGV-FS2018-EN- v2 _output.xlsx",
+      "table_id": "row_47",
+      "file_name": "CJCGV-FS2018-EN- v2 _output",
+      "table_index": 46,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CP Vietnam-FS2018-Consol-EN_output.xlsx",
+      "table_id": "row_5",
+      "file_name": "CP Vietnam-FS2018-Consol-EN_output",
+      "table_index": 4,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CP Vietnam-FS2018-Consol-EN_output.xlsx",
+      "table_id": "row_8",
+      "file_name": "CP Vietnam-FS2018-Consol-EN_output",
+      "table_index": 7,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CP Vietnam-FS2018-Consol-EN_output.xlsx",
+      "table_id": "row_10",
+      "file_name": "CP Vietnam-FS2018-Consol-EN_output",
+      "table_index": 9,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CP Vietnam-FS2018-Consol-EN_output.xlsx",
+      "table_id": "row_13",
+      "file_name": "CP Vietnam-FS2018-Consol-EN_output",
+      "table_index": 12,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CP Vietnam-FS2018-Consol-EN_output.xlsx",
+      "table_id": "row_15",
+      "file_name": "CP Vietnam-FS2018-Consol-EN_output",
+      "table_index": 14,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CP Vietnam-FS2018-Consol-EN_output.xlsx",
+      "table_id": "row_27",
+      "file_name": "CP Vietnam-FS2018-Consol-EN_output",
+      "table_index": 26,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CP Vietnam-FS2018-Consol-EN_output.xlsx",
+      "table_id": "row_32",
+      "file_name": "CP Vietnam-FS2018-Consol-EN_output",
+      "table_index": 31,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CP Vietnam-FS2018-Consol-EN_output.xlsx",
+      "table_id": "row_38",
+      "file_name": "CP Vietnam-FS2018-Consol-EN_output",
+      "table_index": 37,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CP Vietnam-FS2018-Consol-EN_output.xlsx",
+      "table_id": "row_49",
+      "file_name": "CP Vietnam-FS2018-Consol-EN_output",
+      "table_index": 48,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "CP Vietnam-FS2018-Consol-EN_output.xlsx",
+      "table_id": "row_51",
+      "file_name": "CP Vietnam-FS2018-Consol-EN_output",
+      "table_index": 50,
+      "status": "FAIL_TOOL_EXTRACT"
+    },
+    {
+      "source_file": "test_single_table_output.xlsx",
+      "table_id": "row_2",
+      "file_name": "test_single_table_output",
+      "table_index": 1,
+      "status": "FAIL_TOOL_EXTRACT"
+    }
+  ],
+  "expected_count": 20,
+  "edge_cases": {
+    "rule_b_blank_label": [],
+    "equity_validator": [],
+    "tax_validator": []
+  }
+}

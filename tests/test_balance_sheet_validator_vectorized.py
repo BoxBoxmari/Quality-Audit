@@ -6,8 +6,7 @@ import pandas as pd
 import pytest
 
 from quality_audit.config.validation_rules import get_balance_rules
-from quality_audit.core.validators.balance_sheet_validator import \
-    BalanceSheetValidator
+from quality_audit.core.validators.balance_sheet_validator import BalanceSheetValidator
 
 
 class TestBalanceSheetValidatorVectorized:

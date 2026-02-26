@@ -515,7 +515,7 @@ def _check_balance_sheet(df: pd.DataFrame) -> dict:
 
     # 2) Dựng bảng dữ liệu với header từ hàng 'Code'
     header = [str(c).strip() for c in df.iloc[header_idx].tolist()]
-    tmp = df.iloc[header_idx + 1:].copy()
+    tmp = df.iloc[header_idx + 1 :].copy()
     tmp.columns = header
 
     # 3) Xác định cột 'Code' và 2 cột số (cột hiện tại & so sánh)
@@ -558,7 +558,7 @@ def _check_balance_sheet(df: pd.DataFrame) -> dict:
             if abs(cur_val) + abs(prior_val) == 0 and abs(old_cur) + abs(old_pr) != 0:
                 continue
         data[code] = (cur_val, prior_val)
-        if row.get(note_col, "") != "" "":
+        if row.get(note_col, "") != "":
             acc_name = row.get(tmp.columns[0]).strip().lower()
             BSPL_cross_check_cache[acc_name] = (cur_val, prior_val)
         else:
@@ -665,8 +665,10 @@ def _check_balance_sheet(df: pd.DataFrame) -> dict:
     else:
         preview = "; ".join(issues[:10])
         more = f" ... (+{len(issues) - 10} dòng)" if len(issues) > 10 else ""
-        status = f"FAIL: Balance sheet - kiểm tra công thức: {
-            len(issues)} sai lệch. {preview}{more}"
+        status = (
+            f"FAIL: Balance sheet - kiểm tra công thức: {len(issues)} sai lệch. "
+            f"{preview}{more}"
+        )
 
     return {"status": status, "marks": marks, "cross_ref_marks": []}
 
@@ -706,7 +708,7 @@ def _check_income_statement(df: pd.DataFrame) -> dict:
 
     # 2) Dựng bảng dữ liệu với header từ hàng 'Code'
     header = [str(c).strip() for c in df.iloc[header_idx].tolist()]
-    tmp = df.iloc[header_idx + 1:].copy()
+    tmp = df.iloc[header_idx + 1 :].copy()
     tmp.columns = header
     tmp = tmp.reset_index(drop=True)
 
@@ -746,7 +748,7 @@ def _check_income_statement(df: pd.DataFrame) -> dict:
             if abs(cur_val) + abs(prior_val) == 0 and abs(old_cur) + abs(old_pr) != 0:
                 continue
         data[code] = (cur_val, prior_val)
-        if row.get(note_col, "") != "" "":
+        if row.get(note_col, "") != "":
             acc_name = row.get(tmp.columns[0]).strip().lower()
             BSPL_cross_check_cache[acc_name] = (cur_val, prior_val)
             if code in ["51", "52"]:
@@ -839,8 +841,10 @@ def _check_income_statement(df: pd.DataFrame) -> dict:
     else:
         preview = "; ".join(issues[:10])
         more = f" ... (+{len(issues) - 10} dòng)" if len(issues) > 10 else ""
-        status = f"FAIL: Statement of income - kiểm tra công thức: {
-            len(issues)} sai lệch. {preview}{more}"
+        status = (
+            f"FAIL: Statement of income - kiểm tra công thức: {len(issues)} sai lệch. "
+            f"{preview}{more}"
+        )
 
     return {"status": status, "marks": marks, "cross_ref_marks": []}
 
@@ -860,7 +864,7 @@ def _check_cash_flows(df: pd.DataFrame) -> dict:
 
     # 2) Dựng bảng dữ liệu với header từ hàng 'Code'
     header = [str(c).strip() for c in df.iloc[header_idx].tolist()]
-    tmp = df.iloc[header_idx + 1:].copy()
+    tmp = df.iloc[header_idx + 1 :].copy()
     tmp.columns = header
     tmp = tmp.reset_index(drop=True)
 
@@ -1164,7 +1168,7 @@ def _check_changes_in_equity(df: pd.DataFrame) -> dict:
 
         for r in range(first_data_idx, len(df)):
             row_series = df_numeric.iloc[r]
-            left_part = row_series.iloc[start_col_idx: end_idx + 1]
+            left_part = row_series.iloc[start_col_idx : end_idx + 1]
             expected = left_part.sum(skipna=True)
             actual = row_series.iloc[target_col_idx]
             if pd.isna(expected) and pd.isna(actual):
@@ -1775,11 +1779,11 @@ def check_table_total(df, heading=None):
                             NBV_start_row_idx = i
 
                     cost_detail_sum = df_numeric.iloc[
-                        cost_start_row_idx: AD_start_row_idx - 2
+                        cost_start_row_idx : AD_start_row_idx - 2
                     ].sum(skipna=True)
                     cost_total_row = df_numeric.iloc[AD_start_row_idx - 1]
                     AD_detail_sum = df_numeric.iloc[
-                        AD_start_row_idx: NBV_start_row_idx - 2
+                        AD_start_row_idx : NBV_start_row_idx - 2
                     ].sum(skipna=True)
                     AD_total_row = df_numeric.iloc[NBV_start_row_idx - 1]
                     OB_detail_cal = (
@@ -2470,8 +2474,12 @@ def check_table_total(df, heading=None):
                     status = "PASS: Kiểm tra công thức: KHỚP (0 sai lệch)"
                 else:
                     preview = "; ".join(issues[:10])
-                    more = f" ... (+{len(issues) -
-                                     10} dòng)" if len(issues) > 10 else ""
+                    more = (
+                        f" ... (+{len(issues) -
+                                     10} dòng)"
+                        if len(issues) > 10
+                        else ""
+                    )
                     status = f"FAIL: Kiểm tra công thức: {
                         len(issues)} sai lệch. {preview}{more}"
 

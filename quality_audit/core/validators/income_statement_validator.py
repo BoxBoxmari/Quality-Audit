@@ -2,8 +2,9 @@
 Income Statement validator implementation.
 """
 
+import logging
 import re
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -12,85 +13,187 @@ from ...utils.numeric_utils import parse_numeric
 from ..cache_manager import cross_check_cache
 from .base_validator import BaseValidator, ValidationResult
 
+logger = logging.getLogger(__name__)
+
 
 class IncomeStatementValidator(BaseValidator):
     """Validator for income statement financial statements."""
 
-    def validate(self, df: pd.DataFrame, heading: str = None) -> ValidationResult:
+    def validate(
+        self,
+        df: pd.DataFrame,
+        heading: Optional[str] = None,
+        table_context: Optional[Dict] = None,
+    ) -> ValidationResult:
         """
         Validate income statement table.
 
         Args:
             df: DataFrame containing income statement data
             heading: Table heading (unused)
+            table_context: Optional extraction metadata (quality_score, quality_flags)
 
         Returns:
             ValidationResult: Validation results
         """
-        # Find header row
-        header_idx = self._find_header_row(df, "code")
-        if header_idx is None:
-            return ValidationResult(
-                status="WARN: Statement of income - không tìm thấy cột 'Code' để kiểm tra",
-                marks=[],
-                cross_ref_marks=[],
+        early = self._check_extraction_quality(table_context)
+        if early is not None:
+            return early
+
+        self._current_table_context = {
+            "table_id": (table_context or {}).get("table_id", ""),
+            "heading": heading or "",
+        }
+        try:
+            # Fallback: if first row is a header row but dataframe has positional columns,
+            # promote it to headers before normalization.
+            if df is not None and not df.empty:
+                try:
+                    first_row = df.iloc[0].astype(str).str.strip().str.lower().tolist()
+                except Exception:
+                    first_row = []
+                if any(v == "code" for v in first_row):
+                    df_promoted = df.copy()
+                    df_promoted.columns = df_promoted.iloc[0].astype(str)
+                    df_promoted = df_promoted.iloc[1:].reset_index(drop=True)
+                    df_norm, metadata = self._normalize_table_with_metadata(
+                        df_promoted, heading, table_context
+                    )
+                else:
+                    df_norm, metadata = self._normalize_table_with_metadata(
+                        df, heading, table_context
+                    )
+            else:
+                df_norm, metadata = self._normalize_table_with_metadata(
+                    df, heading, table_context
+                )
+
+            # Check if normalization succeeded in identifying a Code column
+            code_col = metadata.get("code_column")
+            if (
+                not code_col
+                and metadata.get("header_row_idx") == -1
+                and not metadata.get("normalization_applied")
+            ):
+                code_col = next(
+                    (c for c in df_norm.columns if str(c).strip().lower() == "code"),
+                    None,
+                )
+
+            if not code_col:
+                from ...utils.table_normalizer import TableNormalizer
+
+                code_col = TableNormalizer._detect_code_column_with_synonyms(df_norm)
+
+            if not code_col:
+                canon = metadata.get("canon_report") or {}
+                flags = canon.get("flags") or {}
+                rule_id = (
+                    "UNDETERMINED_HEADER_AFTER_CANONICALIZE"
+                    if metadata.get("canonicalization_applied") and flags
+                    else "MISSING_CODE_COLUMN"
+                )
+                return ValidationResult(
+                    status="WARN: Statement of income - không tìm thấy cột 'Code' để kiểm tra",
+                    marks=[],
+                    cross_ref_marks=[],
+                    rule_id=rule_id,
+                    status_enum="INFO_SKIPPED",
+                    context={"failure_reason_code": rule_id, **metadata},
+                )
+
+            # Safety override: if there is an explicit "Code" column, always prefer it.
+            # This validator's cache and rule checks rely on numeric account codes.
+            explicit_code_col = next(
+                (c for c in df_norm.columns if str(c).strip().lower() == "code"), None
+            )
+            if explicit_code_col is not None:
+                code_col = explicit_code_col
+
+            # Use normalized dataframe
+            tmp = df_norm
+            header = list(tmp.columns)
+            header_idx = -1
+
+            # P2-T1: Ensure we assign the detected columns for downstream use if possible
+            # Currently the rest of the code re-detects columns, so we just provide tmp.
+
+            # Use the detected code column from normalization (do not re-restrict to literal "code")
+            if code_col is None:
+                canon = metadata.get("canon_report") or {}
+                flags = canon.get("flags") or {}
+                rule_id = (
+                    "UNDETERMINED_HEADER_AFTER_CANONICALIZE"
+                    if metadata.get("canonicalization_applied") and flags
+                    else "MISSING_CODE_COLUMN"
+                )
+                return ValidationResult(
+                    status="WARN: Statement of income - không xác định được cột 'Code'",
+                    marks=[],
+                    cross_ref_marks=[],
+                    rule_id=rule_id,
+                    status_enum="INFO_SKIPPED",
+                    context={"failure_reason_code": rule_id, **metadata},
+                )
+
+            note_col = next(
+                (c for c in tmp.columns if str(c).strip().lower() == "note"), None
             )
 
-        # Extract data with proper headers
-        header = [str(c).strip() for c in df.iloc[header_idx].tolist()]
-        tmp = df.iloc[header_idx + 1:].copy()
-        tmp.columns = header
-        tmp = tmp.reset_index(drop=True)
+            # Find numeric columns using advanced column detection
+            cur_col, prior_col = ColumnDetector.detect_financial_columns_advanced(tmp)
+            if cur_col is None or prior_col is None:
+                return ValidationResult(
+                    status="FAIL_TOOL_EXTRACT: Không tìm thấy cặp cột CY/PY có đủ numeric evidence",
+                    marks=[],
+                    cross_ref_marks=[],
+                    rule_id="NO_NUMERIC_EVIDENCE",
+                    status_enum="FAIL_TOOL_EXTRACT",
+                    context={"failure_reason_code": "NO_NUMERIC_EVIDENCE", **metadata},
+                )
 
-        # Identify columns
-        code_col = next(
-            (c for c in tmp.columns if str(c).strip().lower() == "code"), None
-        )
-        if code_col is None:
-            return ValidationResult(
-                status="WARN: Statement of income - không xác định được cột 'Code'",
-                marks=[],
-                cross_ref_marks=[],
-            )
+            # Build data map
+            data: Dict[str, Any] = {}
+            code_rowpos: Dict[str, int] = {}
 
-        note_col = next(
-            (c for c in tmp.columns if str(c).strip().lower() == "note"), None
-        )
-
-        # Find numeric columns using advanced column detection
-        cur_col, prior_col = ColumnDetector.detect_financial_columns_advanced(tmp)
-        if cur_col is None or prior_col is None:
-            # Fallback to last two columns if detection fails
-            cur_col, prior_col = tmp.columns[-2], tmp.columns[-1]
-
-        # Build data map
-        data = {}
-        code_rowpos = {}
-
-        for ridx, row in tmp.iterrows():
-            code = self._normalize_code(row.get(code_col, ""))
-            if not code or not re.match(r"^[0-9]+[A-Z]?$", code):
-                continue
-
-            cur_val = parse_numeric(row.get(cur_col, ""))
-            prior_val = parse_numeric(row.get(prior_col, ""))
-
-            if code in data:
-                old_cur, old_pr = data[code]
-                if (
-                    abs(cur_val) + abs(prior_val) == 0
-                    and abs(old_cur) + abs(old_pr) != 0
-                ):
+            for ridx, row in tmp.iterrows():
+                code = self._normalize_code(row.get(code_col, ""))
+                if not code or not re.match(r"^[0-9]+[A-Z]?$", code):
                     continue
 
-            data[code] = (cur_val, prior_val)
+                cur_val = parse_numeric(row.get(cur_col, ""))
+                prior_val = parse_numeric(row.get(prior_col, ""))
 
-            # Cross-check cache logic: store account names and special codes
-            if row.get(note_col, "") != "":
-                acc_name = row.get(tmp.columns[0]).strip().lower()
-                cross_check_cache.set(acc_name, (cur_val, prior_val))
+                if code in data:
+                    old_cur, old_pr = data[code]
+                    if (
+                        abs(cur_val) + abs(prior_val) == 0
+                        and abs(old_cur) + abs(old_pr) != 0
+                    ):
+                        continue
 
-                # Aggregate codes '51' and '52' into "income tax"
+                data[code] = (cur_val, prior_val)
+
+                # Cross-check cache: always store by code (e.g., '50')
+                cross_check_cache.set(code, (cur_val, prior_val))
+
+                # Store account name when there is a Note reference
+                if note_col is not None and str(row.get(note_col, "")).strip() != "":
+                    # Prefer a descriptive account/name column if present
+                    account_col = next(
+                        (
+                            c
+                            for c in tmp.columns
+                            if str(c).strip().lower()
+                            in {"account", "description", "item", "account name"}
+                        ),
+                        tmp.columns[0],
+                    )
+                    acc_name = str(row.get(account_col, "")).strip().lower()
+                    if acc_name:
+                        cross_check_cache.set(acc_name, (cur_val, prior_val))
+
+                # Aggregate codes '51' and '52' into "income tax" (regardless of Note)
                 if code in ["51", "52"]:
                     cached_income_tax = cross_check_cache.get("income tax")
                     if cached_income_tax:
@@ -100,87 +203,131 @@ class IncomeStatementValidator(BaseValidator):
                     cross_check_cache.set(
                         "income tax", (cur_val + old_cur, prior_val + old_pr)
                     )
+
+                code_rowpos.setdefault(code, ridx)
+
+            # Get column positions
+            try:
+                cur_col_pos = header.index(cur_col)
+                prior_col_pos = header.index(prior_col)
+            except ValueError:
+                cur_col_pos = len(header) - 2
+                prior_col_pos = len(header) - 1
+
+            # Validate income statement rules
+            issues = []
+            marks = []
+
+            def check(parent, children, label=None):
+                parent_norm = self._normalize_code(parent)
+                if parent_norm not in data:
+                    return
+
+                have_any, cur_sum, prior_sum, missing = self._sum_weighted(
+                    data, children
+                )
+                if not have_any:
+                    return
+
+                ac_cur, ac_pr = data[parent_norm]
+                dc = cur_sum - ac_cur
+                dp = prior_sum - ac_pr
+                is_ok_cy = abs(round(dc)) == 0
+                is_ok_py = abs(round(dp)) == 0
+
+                if parent_norm in code_rowpos:
+                    # SCRUM-11: If header_idx = -1, header already promoted, no offset needed
+                    df_row = (
+                        (header_idx + 1 + code_rowpos[parent_norm])
+                        if header_idx >= 0
+                        else code_rowpos[parent_norm]
+                    )
+                    comment = (
+                        f"{parent_norm} = {' + '.join(children).replace('+ -', ' - ')}; "
+                        f"Tính={cur_sum:,.0f}/{prior_sum:,.0f}; Thực tế={ac_cur:,.0f}/{ac_pr:,.0f}; Δ={dc:,.0f}/{dp:,.0f}"
+                        + (f"; Thiếu={','.join(missing)}" if missing else "")
+                    )
+                    marks.append(
+                        {
+                            "row": df_row,
+                            "col": cur_col_pos,
+                            "ok": is_ok_cy,
+                            "comment": None if is_ok_cy else comment,
+                        }
+                    )
+                    marks.append(
+                        {
+                            "row": df_row,
+                            "col": prior_col_pos,
+                            "ok": is_ok_py,
+                            "comment": None if is_ok_py else comment,
+                        }
+                    )
+
+                if not is_ok_cy or not is_ok_py:
+                    issues.append(comment)
+
+            # SCRUM-12: Template selection - check if code 10 exists to determine template
+            # Template 1: Has code 10 -> check 10=01-02, 20=10-11
+            # Template 2: No code 10 -> check 20=01-11 (or 20=01-02-11)
+            has_code_10 = "10" in data
+
+            # Apply income statement rules with template selection
+            if has_code_10:
+                # Template 1: Has code 10
+                check("10", ["01", "-02"])
+                check("20", ["10", "-11"])
             else:
-                # Store code '50' in cache for tax reconciliation cross-check
-                if code == "50":
-                    cross_check_cache.set("50", (cur_val, prior_val))
+                # Template 2: No code 10 -> use alternative formula
+                check("20", ["01", "-02", "-11"])
 
-            code_rowpos.setdefault(code, ridx)
+            # Common rules for both templates
+            check("30", ["20", "21", "-22", "24", "-25", "-26"])
+            check("40", ["31", "-32"])
+            check("50", ["30", "40"])
+            check("60", ["50", "-51", "-52"])
+            check("60", ["61", "62"])
 
-        # Get column positions
-        try:
-            cur_col_pos = header.index(cur_col)
-            prior_col_pos = header.index(prior_col)
-        except ValueError:
-            cur_col_pos = len(header) - 2
-            prior_col_pos = len(header) - 1
-
-        # Validate income statement rules
-        issues = []
-        marks = []
-
-        def check(parent, children, label=None):
-            parent_norm = self._normalize_code(parent)
-            if parent_norm not in data:
-                return
-
-            have_any, cur_sum, prior_sum, missing = self._sum_weighted(data, children)
-            if not have_any:
-                return
-
-            ac_cur, ac_pr = data[parent_norm]
-            dc = cur_sum - ac_cur
-            dp = prior_sum - ac_pr
-            is_ok_cy = abs(dc) < 0.01
-            is_ok_py = abs(dp) < 0.01
-
-            if parent_norm in code_rowpos:
-                df_row = header_idx + 1 + code_rowpos[parent_norm]
-                comment = (
-                    f"{parent_norm} = {' + '.join(children).replace('+ -', ' - ')}; "
-                    f"Tính={cur_sum:,.0f}/{prior_sum:,.0f}; Thực tế={ac_cur:,.0f}/{ac_pr:,.0f}; Δ={dc:,.0f}/{dp:,.0f}"
-                    + (f"; Thiếu={','.join(missing)}" if missing else "")
+            # Generate status
+            if not issues:
+                status = (
+                    "PASS: Statement of income - kiểm tra công thức: KHỚP (0 sai lệch)"
                 )
-                marks.append(
-                    {
-                        "row": df_row,
-                        "col": cur_col_pos,
-                        "ok": is_ok_cy,
-                        "comment": None if is_ok_cy else comment,
-                    }
-                )
-                marks.append(
-                    {
-                        "row": df_row,
-                        "col": prior_col_pos,
-                        "ok": is_ok_py,
-                        "comment": None if is_ok_py else comment,
-                    }
-                )
+            else:
+                preview = "; ".join(issues[:10])
+                more = f" ... (+{len(issues) - 10} dòng)" if len(issues) > 10 else ""
+                status = f"FAIL: Statement of income - kiểm tra công thức: {len(issues)} sai lệch. {preview}{more}"
 
-            if not is_ok_cy or not is_ok_py:
-                issues.append(comment)
-
-        # Apply income statement rules
-        check("10", ["01", "-02"])
-        check("20", ["10", "-11"])
-        check("20", ["01", "-02", "-11"])
-        check("30", ["20", "21", "-22", "24", "-25", "-26"])
-        check("40", ["31", "-32"])
-        check("50", ["30", "40"])
-        check("60", ["50", "-51", "-52"])
-        check("60", ["61", "62"])
-
-        # Generate status
-        if not issues:
-            status = "PASS: Statement of income - kiểm tra công thức: KHỚP (0 sai lệch)"
-        else:
-            preview = "; ".join(issues[:10])
-            more = f" ... (+{len(issues) - 10} dòng)" if len(issues) > 10 else ""
-            status = f"FAIL: Statement of income - kiểm tra công thức: {
-                len(issues)} sai lệch. {preview}{more}"
-
-        return ValidationResult(status=status, marks=marks, cross_ref_marks=[])
+            result = ValidationResult(
+                status=status,
+                marks=marks,
+                cross_ref_marks=[],
+                detected_columns=list(tmp.columns),
+                root_cause="Calculation Mismatch" if issues else None,
+                table_id="Income Statement",
+                assertions_count=len(marks),
+                context=metadata,
+            )
+            result = self._enforce_pass_gating(
+                result,
+                result.assertions_count,
+                metadata.get("numeric_evidence_score", 0.0),
+            )
+            return self._apply_warn_capping(result, table_context)
+        except Exception as e:
+            logger.exception("Income statement validator logic failed")
+            return ValidationResult(
+                status=f"FAIL: Validator logic error - {type(e).__name__}: {e}",
+                marks=[],
+                cross_ref_marks=[],
+                status_enum="FAIL_TOOL_LOGIC",
+                rule_id="FAIL_TOOL_LOGIC_VALIDATOR_CRASH",
+                context=dict(table_context) if table_context else {},
+                exception_type=type(e).__name__,
+                exception_message=str(e),
+            )
+        finally:
+            self._current_table_context = {}
 
     def _sum_weighted(self, data: Dict[str, tuple], children: List[str]) -> tuple:
         """Calculate weighted sum for income statement rules."""

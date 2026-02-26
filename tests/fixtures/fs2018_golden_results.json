@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "description": "Golden reference for regression: acceptance thresholds and optional expected structure",
+  "acceptance": {
+    "warn_ratio_max": 0.03,
+    "totals_recall_min": 0.9
+  },
+  "expected_min_tables": 1,
+  "traceability": {
+    "run_id_required": true,
+    "extractor_engine_required": true
+  }
+}

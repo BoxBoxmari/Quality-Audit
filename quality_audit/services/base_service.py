@@ -2,13 +2,12 @@
 Base service class for service layer abstraction.
 """
 
-from abc import ABC
 from typing import Optional
 
 from ..core.cache_manager import AuditContext, LRUCacheManager
 
 
-class BaseService(ABC):
+class BaseService:
     """
     Base class for all services in the Quality Audit application.
 

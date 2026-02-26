@@ -5,8 +5,9 @@ Tests for FinancialDataRepository.
 import pytest
 
 from quality_audit.core.cache_manager import LRUCacheManager
-from quality_audit.core.repositories.financial_data_repository import \
-    FinancialDataRepository
+from quality_audit.core.repositories.financial_data_repository import (
+    FinancialDataRepository,
+)
 
 
 class TestFinancialDataRepository:

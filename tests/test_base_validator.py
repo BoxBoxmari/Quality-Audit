@@ -2,12 +2,13 @@
 Tests for BaseValidator cross-checking functionality.
 """
 
+from unittest.mock import patch
+
 import pandas as pd
 
-from quality_audit.core.cache_manager import (cross_check_cache,
-                                              cross_check_marks)
-from quality_audit.core.validators.generic_validator import \
-    GenericTableValidator
+from quality_audit.core.cache_manager import cross_check_cache, cross_check_marks
+from quality_audit.core.validators.base_validator import ValidationResult
+from quality_audit.core.validators.generic_validator import GenericTableValidator
 
 
 class TestCrossCheckWithBSPL:
@@ -112,3 +113,40 @@ class TestCrossCheckWithBSPL:
         # Adjusted row should be CY_row - 1, adjusted col should be len(df.columns)
         assert cross_ref_marks[0]["row"] == 0  # 1 - 1
         assert cross_ref_marks[0]["col"] == 3  # len(df.columns) = 3
+
+
+class TestPassGating:
+    """Test _enforce_pass_gating and treat_no_assertion_as_pass flag."""
+
+    def test_treat_no_assertion_as_pass_true_keeps_pass(self):
+        """When treat_no_assertion_as_pass=True and assertions_count=0, PASS is kept."""
+        result = ValidationResult(
+            status="PASS",
+            status_enum="PASS",
+            marks=[],
+        )
+        validator = GenericTableValidator()
+        with patch(
+            "quality_audit.core.validators.base_validator.get_feature_flags",
+            return_value={"treat_no_assertion_as_pass": True},
+        ):
+            out = validator._enforce_pass_gating(result, 0, 0.5)
+        assert out.status_enum == "PASS"
+        assert out.status == "PASS"
+
+    def test_treat_no_assertion_as_pass_false_overrides_to_info_skipped(self):
+        """When treat_no_assertion_as_pass=False and assertions_count=0, PASS becomes INFO_SKIPPED."""
+        result = ValidationResult(
+            status="PASS",
+            status_enum="PASS",
+            marks=[],
+        )
+        validator = GenericTableValidator()
+        with patch(
+            "quality_audit.core.validators.base_validator.get_feature_flags",
+            return_value={"treat_no_assertion_as_pass": False},
+        ):
+            out = validator._enforce_pass_gating(result, 0, 0.5)
+        assert out.status_enum == "INFO_SKIPPED"
+        assert "No assertions" in (out.status or "")
+        assert out.context.get("failure_reason_code") == "NO_ASSERTIONS"

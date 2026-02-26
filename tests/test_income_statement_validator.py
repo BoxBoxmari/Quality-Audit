@@ -4,10 +4,10 @@ Tests for IncomeStatementValidator cross-check cache logic.
 
 import pandas as pd
 
-from quality_audit.core.cache_manager import (cross_check_cache,
-                                              cross_check_marks)
-from quality_audit.core.validators.income_statement_validator import \
-    IncomeStatementValidator
+from quality_audit.core.cache_manager import cross_check_cache, cross_check_marks
+from quality_audit.core.validators.income_statement_validator import (
+    IncomeStatementValidator,
+)
 
 
 class TestIncomeStatementCrossCheckCache:
@@ -31,7 +31,7 @@ class TestIncomeStatementCrossCheckCache:
         )
 
         validator = IncomeStatementValidator()
-        result = validator.validate(df)
+        validator.validate(df)
 
         # Verify: Account name from note column should be in cache
         assert "cost" in cross_check_cache
@@ -51,7 +51,7 @@ class TestIncomeStatementCrossCheckCache:
         )
 
         validator = IncomeStatementValidator()
-        result = validator.validate(df)
+        validator.validate(df)
 
         # Verify: 'income tax' should contain sum of '51' and '52'
         cached_value = cross_check_cache.get("income tax")
@@ -70,7 +70,7 @@ class TestIncomeStatementCrossCheckCache:
         )
 
         validator = IncomeStatementValidator()
-        result = validator.validate(df)
+        validator.validate(df)
 
         # Verify: Code '50' should be in cache
         cached_value = cross_check_cache.get("50")

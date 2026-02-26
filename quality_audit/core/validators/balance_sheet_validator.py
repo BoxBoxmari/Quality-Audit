@@ -2,7 +2,8 @@
 Balance Sheet validator implementation.
 """
 
-from typing import Dict, List, Tuple
+import logging
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -12,6 +13,8 @@ from ...utils.column_detector import ColumnDetector
 from ...utils.numeric_utils import parse_numeric
 from ..cache_manager import cross_check_cache
 from .base_validator import BaseValidator, ValidationResult
+
+logger = logging.getLogger(__name__)
 
 
 class BalanceSheetValidator(BaseValidator):
@@ -96,8 +99,8 @@ class BalanceSheetValidator(BaseValidator):
             # Calculate differences
             diff_cy = child_sum_cy - parent_cy
             diff_py = child_sum_py - parent_py
-            is_ok_cy = abs(diff_cy) < 0.01
-            is_ok_py = abs(diff_py) < 0.01
+            is_ok_cy = abs(round(diff_cy)) == 0
+            is_ok_py = abs(round(diff_py)) == 0
 
             # Find missing children using vectorized operations
             all_child_codes = set(child_norms)
@@ -106,7 +109,12 @@ class BalanceSheetValidator(BaseValidator):
 
             # Create marks
             if parent_norm in code_rowpos:
-                df_row = header_idx + 1 + code_rowpos[parent_norm]
+                # SCRUM-11: If header_idx = -1, header already promoted, no offset needed
+                df_row = (
+                    (header_idx + 1 + code_rowpos[parent_norm])
+                    if header_idx >= 0
+                    else code_rowpos[parent_norm]
+                )
                 comment = (
                     f"{parent_norm} = sum({','.join(children)}); "
                     f"Tính={child_sum_cy:,.0f}/{child_sum_py:,.0f}; "
@@ -136,39 +144,119 @@ class BalanceSheetValidator(BaseValidator):
 
         return issues, marks
 
-    def validate(self, df: pd.DataFrame, heading: str = None) -> ValidationResult:
+    def validate(
+        self,
+        df: pd.DataFrame,
+        heading: Optional[str] = None,
+        table_context: Optional[Dict] = None,
+    ) -> ValidationResult:
         """
         Validate balance sheet table with automatic chunked processing for large tables.
 
         Args:
             df: DataFrame containing balance sheet data
             heading: Table heading (unused for balance sheet)
+            table_context: Optional extraction metadata (quality_score, quality_flags)
 
         Returns:
             ValidationResult: Validation results
         """
-        # Find header row
-        header_idx = self._find_header_row(df, "code")
-        if header_idx is None:
-            return ValidationResult(
-                status="WARN: Balance sheet - không tìm thấy cột 'Code' để kiểm tra",
-                marks=[],
-                cross_ref_marks=[],
+        early = self._check_extraction_quality(table_context)
+        if early is not None:
+            return early
+
+        self._current_table_context = {
+            "table_id": (table_context or {}).get("table_id", ""),
+            "heading": heading or "",
+        }
+        try:
+            if df is None or df.empty:
+                return ValidationResult(
+                    status="WARN: Balance sheet - bảng rỗng (empty table)",
+                    marks=[],
+                    cross_ref_marks=[],
+                )
+
+            # P2-T1: Use centralized TableNormalizer
+            df_norm, metadata = self._normalize_table_with_metadata(
+                df, heading, table_context
             )
 
-        # Extract data with proper headers
-        header = [str(c).strip() for c in df.iloc[header_idx].tolist()]
-        tmp = df.iloc[header_idx + 1:].copy()
-        tmp.columns = header
+            # Check if normalization succeeded in identifying a Code column
+            code_col = metadata.get("code_column")
+            if (
+                not code_col
+                and metadata.get("header_row_idx") == -1
+                and not metadata.get("normalization_applied")
+            ):
+                # It means detection failed or no header found.
+                # Check if we have a default "code" column?
+                # If not, warn.
+                # Try fallback to legacy 'check "Code" in existing columns' just in case
+                code_col = next(
+                    (c for c in df_norm.columns if str(c).strip().lower() == "code"),
+                    None,
+                )
 
-        # Check if table is large enough to use chunked processing
-        if len(tmp) > self.LARGE_TABLE_THRESHOLD:
-            return self._validate_large_table_chunked(tmp, header, header_idx, heading)
-        else:
-            return self._validate_standard(tmp, header, header_idx, heading)
+            if not code_col:
+                # Last ditch: try to detect it again if Normalizer missed it (unlikely)
+                from ...utils.table_normalizer import TableNormalizer
+
+                code_col = TableNormalizer._detect_code_column_with_synonyms(df_norm)
+
+            if not code_col:
+                canon = metadata.get("canon_report") or {}
+                flags = canon.get("flags") or {}
+                rule_id = (
+                    "UNDETERMINED_HEADER_AFTER_CANONICALIZE"
+                    if metadata.get("canonicalization_applied") and flags
+                    else "MISSING_CODE_COLUMN"
+                )
+                return ValidationResult(
+                    status="WARN: Balance sheet - không tìm thấy cột 'Code' để kiểm tra",
+                    marks=[],
+                    cross_ref_marks=[],
+                    rule_id=rule_id,
+                    status_enum="INFO_SKIPPED",
+                    context={"failure_reason_code": rule_id, **metadata},
+                )
+
+            # Check if table is large enough to use chunked processing
+            if len(df_norm) > self.LARGE_TABLE_THRESHOLD:
+                result = self._validate_large_table_chunked(
+                    df_norm, list(df_norm.columns), -1, heading
+                )
+            else:
+                result = self._validate_standard(
+                    df_norm, list(df_norm.columns), -1, heading
+                )
+            result = self._enforce_pass_gating(
+                result,
+                result.assertions_count,
+                metadata.get("numeric_evidence_score", 0.0),
+            )
+            return self._apply_warn_capping(result, table_context)
+        except Exception as e:
+            logger.exception("Balance sheet validator logic failed")
+            return ValidationResult(
+                status="FAIL_TOOL_LOGIC: Validator exception",
+                marks=[],
+                cross_ref_marks=[],
+                rule_id="FAIL_TOOL_LOGIC_VALIDATOR_CRASH",
+                status_enum="FAIL_TOOL_LOGIC",
+                context=dict(table_context) if table_context else {},
+                exception_type=type(e).__name__,
+                exception_message=str(e),
+            )
+        finally:
+            self._current_table_context = {}
 
     def _validate_standard(
-        self, tmp: pd.DataFrame, header: List[str], header_idx: int, heading: str = None
+        self,
+        tmp: pd.DataFrame,
+        header: List[str],
+        header_idx: int,
+        heading: Optional[str] = None,
     ) -> ValidationResult:
         """
         Validate standard-sized balance sheet table (non-chunked).
@@ -176,7 +264,7 @@ class BalanceSheetValidator(BaseValidator):
         Args:
             tmp: DataFrame with proper headers (data rows only, no header row)
             header: List of header column names
-            header_idx: Index of header row in original DataFrame
+            header_idx: Index of header row in original DataFrame (unused in normalized flow usually)
             heading: Table heading (unused)
 
         Returns:
@@ -184,9 +272,28 @@ class BalanceSheetValidator(BaseValidator):
         """
 
         # Identify columns
+        # Code column should be detected by now, but we get it from columns for safety
         code_col = next(
             (c for c in tmp.columns if str(c).strip().lower() == "code"), None
         )
+        # If TableNormalizer identified a different name for code, use it.
+        # But _normalize_table_with_metadata doesn't rename the column to "code" automatically?
+        # TableNormalizer.normalize_table RETURNS data with found headers as columns.
+        # If the header was "Mã số", the column name is "Mã số".
+        # So we must use metadata detection or synonyms again.
+
+        # P2-T1: Re-detect to be sure or use what is in tmp.columns
+        # Note: TableNormalizer doesn't standardise the *name* of the column to 'Code',
+        # it just standardizes the *dataframe structure* (finding the header row).
+        # But BaseValidator._normalize_table_with_metadata returns metadata["code_column"].
+
+        # In this method scopes, we don't have 'metadata' passed in.
+        # So we re-detect.
+        from ...utils.table_normalizer import TableNormalizer
+
+        if code_col is None:
+            code_col = TableNormalizer._detect_code_column_with_synonyms(tmp)
+
         if code_col is None:
             return ValidationResult(
                 status="WARN: Balance sheet - không xác định được cột 'Code'",
@@ -194,15 +301,30 @@ class BalanceSheetValidator(BaseValidator):
                 cross_ref_marks=[],
             )
 
-        note_col = next(
-            (c for c in tmp.columns if str(c).strip().lower() == "note"), None
-        )
+        # SCRUM-11: Improved Note column detection (case-insensitive, partial match)
+        # ... existing logic ...
+
+        note_col = ColumnDetector.detect_note_column(tmp)
+        if note_col is None:
+            # Fallback
+            note_col = next(
+                (c for c in tmp.columns if str(c).strip().lower() == "note"), None
+            )
 
         # Find numeric columns using advanced column detection
         cur_col, prior_col = ColumnDetector.detect_financial_columns_advanced(tmp)
         if cur_col is None or prior_col is None:
-            # Fallback to last two columns if detection fails
-            cur_col, prior_col = tmp.columns[-2], tmp.columns[-1]
+            return ValidationResult(
+                status="FAIL_TOOL_EXTRACT: Không tìm thấy cặp cột CY/PY có đủ numeric evidence",
+                marks=[],
+                cross_ref_marks=[],
+                rule_id="NO_NUMERIC_EVIDENCE",
+                status_enum="FAIL_TOOL_EXTRACT",
+                context={
+                    "failure_reason_code": "NO_NUMERIC_EVIDENCE",
+                    "routing_gate_missed": True,
+                },
+            )
 
         # Vectorized data extraction and cache operations
         # Normalize codes using vectorized operations
@@ -224,8 +346,8 @@ class BalanceSheetValidator(BaseValidator):
         valid_rows["_py_val"] = valid_rows[prior_col].apply(parse_numeric)
 
         # Build data map for cache operations (still needed for cross-checking)
-        data = {}
-        code_rowpos = {}
+        data: Dict[str, Any] = {}
+        code_rowpos: Dict[str, int] = {}
 
         # Process rows for cache operations (this part still needs iteration for
         # cache logic)
@@ -246,10 +368,15 @@ class BalanceSheetValidator(BaseValidator):
             data[code] = (cur_val, prior_val)
 
             # Cross-check cache for notes
+            # SCRUM-11: Improved Note column caching - also cache by code if Note column exists but account name is empty
             if note_col and row.get(note_col, "") != "":
                 acc_name = row.get(tmp.columns[0], "").strip().lower()
                 if acc_name:
                     cross_check_cache.set(acc_name, (cur_val, prior_val))
+                # Fallback: If account name is empty but Note column has value, cache by code
+                elif code and code in ["141", "149", "251", "252", "253", "254"]:
+                    # Cache by code as fallback when Note column exists but account name is missing
+                    cross_check_cache.set(code, (cur_val, prior_val))
             elif code in ["141", "149", "251", "252", "253", "254"]:
                 if code in ["251", "252", "253"]:
                     try:
@@ -268,11 +395,10 @@ class BalanceSheetValidator(BaseValidator):
 
         # Get column positions for marking
         try:
-            cur_col_pos = header.index(cur_col)
-            prior_col_pos = header.index(prior_col)
+            header.index(cur_col)
+            header.index(prior_col)
         except ValueError:
-            cur_col_pos = len(header) - 2
-            prior_col_pos = len(header) - 1
+            pass  # Columns not found, will use defaults
 
         # Use vectorized validation for rules
         rules = get_balance_rules()
@@ -286,13 +412,29 @@ class BalanceSheetValidator(BaseValidator):
         else:
             preview = "; ".join(issues[:10])
             more = f" ... (+{len(issues) - 10} dòng)" if len(issues) > 10 else ""
-            status = f"FAIL: Balance sheet - kiểm tra công thức: {
-                len(issues)} sai lệch. {preview}{more}"
+            status = f"FAIL: Balance sheet - kiểm tra công thức: {len(issues)} sai lệch. {preview}{more}"
 
-        return ValidationResult(status=status, marks=marks, cross_ref_marks=[])
+        # Determine root cause if failed
+        root_cause = None
+        if issues:
+            root_cause = "Calculation Mismatch"
+
+        return ValidationResult(
+            status=status,
+            marks=marks,
+            cross_ref_marks=[],
+            detected_columns=list(tmp.columns),
+            root_cause=root_cause,
+            table_id="Balance Sheet",
+            assertions_count=len(marks),
+        )
 
     def _validate_large_table_chunked(
-        self, tmp: pd.DataFrame, header: List[str], header_idx: int, heading: str = None
+        self,
+        tmp: pd.DataFrame,
+        header: List[str],
+        header_idx: int,
+        heading: Optional[str] = None,
     ) -> ValidationResult:
         """
         Validate large balance sheet table using chunked processing.
@@ -320,25 +462,40 @@ class BalanceSheetValidator(BaseValidator):
                 cross_ref_marks=[],
             )
 
-        note_col = next(
-            (c for c in tmp.columns if str(c).strip().lower() == "note"), None
-        )
+        # SCRUM-11: Improved Note column detection (case-insensitive, partial match)
+        # Use ColumnDetector for robust detection
+
+        note_col = ColumnDetector.detect_note_column(tmp)
+        # Fallback to exact match if ColumnDetector fails
+        if note_col is None:
+            note_col = next(
+                (c for c in tmp.columns if str(c).strip().lower() == "note"), None
+            )
 
         # Find numeric columns using advanced column detection
         cur_col, prior_col = ColumnDetector.detect_financial_columns_advanced(tmp)
         if cur_col is None or prior_col is None:
-            # Fallback to last two columns if detection fails
-            cur_col, prior_col = tmp.columns[-2], tmp.columns[-1]
+            return ValidationResult(
+                status="FAIL_TOOL_EXTRACT: Không tìm thấy cặp cột CY/PY có đủ numeric evidence",
+                marks=[],
+                cross_ref_marks=[],
+                rule_id="NO_NUMERIC_EVIDENCE",
+                status_enum="FAIL_TOOL_EXTRACT",
+                context={
+                    "failure_reason_code": "NO_NUMERIC_EVIDENCE",
+                    "routing_gate_missed": True,
+                },
+            )
 
         # Process in chunks to extract data
         chunk_size = self.LARGE_TABLE_THRESHOLD
-        data = {}
-        code_rowpos = {}
+        data: Dict[str, Any] = {}
+        code_rowpos: Dict[str, int] = {}
         base_index = tmp.index[0]  # Store base index for row position calculation
 
         def process_chunk(chunk: pd.DataFrame) -> Dict:
             """Process a single chunk to extract data."""
-            chunk_data = {}
+            chunk_data: Dict[str, Any] = {}
             chunk_code_rowpos = {}
 
             # Normalize codes
@@ -375,10 +532,15 @@ class BalanceSheetValidator(BaseValidator):
                 chunk_data[code] = (cur_val, prior_val)
 
                 # Cross-check cache for notes
+                # SCRUM-11: Improved Note column caching - also cache by code if Note column exists but account name is empty
                 if note_col and row.get(note_col, "") != "":
                     acc_name = row.get(tmp.columns[0], "").strip().lower()
                     if acc_name:
                         cross_check_cache.set(acc_name, (cur_val, prior_val))
+                    # Fallback: If account name is empty but Note column has value, cache by code
+                    elif code and code in ["141", "149", "251", "252", "253", "254"]:
+                        # Cache by code as fallback when Note column exists but account name is missing
+                        cross_check_cache.set(code, (cur_val, prior_val))
                 elif code in ["141", "149", "251", "252", "253", "254"]:
                     if code in ["251", "252", "253"]:
                         try:
@@ -438,11 +600,10 @@ class BalanceSheetValidator(BaseValidator):
 
         # Get column positions for marking
         try:
-            cur_col_pos = header.index(cur_col)
-            prior_col_pos = header.index(prior_col)
+            header.index(cur_col)
+            header.index(prior_col)
         except ValueError:
-            cur_col_pos = len(header) - 2
-            prior_col_pos = len(header) - 1
+            pass  # Columns not found, will use defaults
 
         # Use vectorized validation for rules (same as standard)
         rules = get_balance_rules()
@@ -456,7 +617,19 @@ class BalanceSheetValidator(BaseValidator):
         else:
             preview = "; ".join(issues[:10])
             more = f" ... (+{len(issues) - 10} dòng)" if len(issues) > 10 else ""
-            status = f"FAIL: Balance sheet - kiểm tra công thức: {
-                len(issues)} sai lệch. {preview}{more} [Chunked processing]"
+            status = f"FAIL: Balance sheet - kiểm tra công thức: {len(issues)} sai lệch. {preview}{more} [Chunked processing]"
 
-        return ValidationResult(status=status, marks=marks, cross_ref_marks=[])
+        # Determine root cause if failed
+        root_cause = None
+        if issues:
+            root_cause = "Calculation Mismatch"
+
+        return ValidationResult(
+            status=status,
+            marks=marks,
+            cross_ref_marks=[],
+            detected_columns=list(tmp.columns),
+            root_cause=root_cause,
+            table_id="Balance Sheet",
+            assertions_count=len(marks),
+        )

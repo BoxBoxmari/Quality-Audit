@@ -6,8 +6,9 @@ with configurable concurrency limits and error handling.
 """
 
 import asyncio
+from builtins import BaseException
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 from .audit_service import AuditService
 
@@ -105,10 +106,12 @@ class BatchProcessor:
         tasks = [process_single_file(path) for path in file_paths]
 
         # Process all files concurrently (with semaphore limiting)
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results: List[Union[Dict[str, Any], BaseException]] = await asyncio.gather(
+            *tasks, return_exceptions=True
+        )
 
         # Handle exceptions that weren't caught in process_single_file
-        processed_results = []
+        processed_results: List[Dict[str, Any]] = []
         for idx, result in enumerate(results):
             if isinstance(result, Exception):
                 processed_results.append(
@@ -122,7 +125,7 @@ class BatchProcessor:
                         "results": [],
                     }
                 )
-            else:
+            elif isinstance(result, dict):
                 processed_results.append(result)
 
         return processed_results

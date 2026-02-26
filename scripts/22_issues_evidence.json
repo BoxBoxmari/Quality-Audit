@@ -1,0 +1,675 @@
+{
+  "COLUMN_TOTAL_VALIDATION": {
+    "count": 8,
+    "items": [
+      {
+        "table_id": "tbl_004_2018_VND_000",
+        "validator_type": "GenericTableValidator",
+        "status": "FAIL",
+        "total_row_method": "row_classifier",
+        "quality_score": 1.0,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_004_2018_VND_000",
+          "Status: FAIL / Reason: COLUMN_TOTAL_VALIDATION",
+          "Column_0 Code Note 2018 VND'000 2017 VND'000",
+          "Trạng thái kiểm tra: FAIL: Kiểm tra công thức: 2 sai lệch. Cột 4: Tổng chi tiết = 6,228,861,624.00, Tổng trên bảng = 18,428,002.00, Sai lệch = 6,210,433,622; Cột 5: Tổng chi tiết = 5,686,404,881.00, Tổng trên bảng = 124,746,924.00, Sai lệch = 5,561,657,957",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric: best_fallback=1, best_score=133.3",
+          "INFO: quality_audit.core.validators.base_validator: Total row fallback selected: idx=1, method=safe_fallback_last_numeric, numeric_count=1, score=133.3",
+          "INFO: quality_audit.core.validators.generic_validator: generic_validator: table_id=tbl_001_Financial_Statements_for_the_year_ended_31_Decembe classifier= final_status=PASS assertions_count=1 no_assertion_reason=None",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_001_Financial Statements for the year ended 31 December 2018 heading_source=table_first_row classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=[] scan_rows=3",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': 'fa263e07d776481e8ff294e2de75b27b', 'table_id': 'tbl_001_Financial_Statements_for_the_year_ended_31_Decembe', 'table_index': 0, 'validation_status': 'Validated', 'heading': 'Financial Statements for the year ended 31 Decembe",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_002_31_12_2018_VND_000 chosen_numeric_columns=[\"31/12/2018 VND'000\", \"1/1/2018 VND'000\"] excluded_code_columns=['ASSETS', 'Code']"
+        ],
+        "fs_preview": [
+          "table_id: tbl_004_2018_VN |  |  |  | ",
+          "Status: FAIL / Reason: CO |  |  |  | ",
+          "FS casting range: rows 89 |  |  |  | ",
+          "2018 VND'000 [tbl_004_201 |  |  |  | ",
+          "Column_0 | Code | Note | 2018 VND'000 | 2017 VND'000"
+        ],
+        "sheet_shape": "102 rows x 5 cols"
+      },
+      {
+        "table_id": "tbl_021_Accounts_payable_to_suppliers_detailed_by_signific",
+        "validator_type": "GenericTableValidator",
+        "status": "FAIL",
+        "total_row_method": "rule_c_sum_equation",
+        "quality_score": 0.9,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_021_Accounts_payable_to_suppliers_detailed_by_signific",
+          "Status: FAIL / Reason: COLUMN_TOTAL_VALIDATION",
+          "Warner Bros Pictures International 54602366 54602366 1380735 1380735",
+          "Trạng thái kiểm tra: FAIL: Kiểm tra công thức: 2 sai lệch. Cột 4: Tổng chi tiết = 137,644,642.00, Tổng trên bảng = 139,025,377.00, Sai lệch = -1,380,735; Cột 5: Tổng chi tiết = 137,644,642.00, Tổng trên bảng = 139,025,377.00, Sai lệch = -1,380,735",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_020_Deferred_tax_assets chosen_numeric_columns=['Col_1', 'Col_2'] excluded_code_columns=['Col_0']",
+          "INFO: quality_audit.core.validators.tax_validator: TaxValidator remaining tables: code_cols=['Col_0']",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair Col_1, Col_2 (scores 1.00, 1.00)",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric: Evaluating 1 candidates with candidate_cols=['Col_1', 'Col_2'] (amount_cols empty: False)",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric candidate idx=3: numeric_count=2, position_score=12.5, has_details_above=False, total_score=212.5",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric: best_fallback=3, best_score=212.5"
+        ],
+        "fs_preview": [
+          "table_id: tbl_021_Account |  |  |  | ",
+          "Status: FAIL / Reason: CO |  |  |  | ",
+          "FS casting range: rows 35 |  |  |  | ",
+          "Accounts payable to suppl |  |  |  | ",
+          "0 | 1 | 2 | 3 | 4"
+        ],
+        "sheet_shape": "93 rows x 5 cols"
+      },
+      {
+        "table_id": "tbl_022_Accounts_payable_to_suppliers_who_are_related_part",
+        "validator_type": "GenericTableValidator",
+        "status": "FAIL",
+        "total_row_method": "row_classifier",
+        "quality_score": 1.0,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_022_Accounts_payable_to_suppliers_who_are_related_part",
+          "Status: FAIL / Reason: COLUMN_TOTAL_VALIDATION",
+          "Trạng thái kiểm tra: FAIL: Kiểm tra công thức: 1 sai lệch. Cột 2: Tổng chi tiết = 15,258,079.00, Tổng trên bảng = 24,748,444.00, Sai lệch = -9,490,365",
+          "INFO: quality_audit.core.validators.base_validator: PASS gating: overrode to INFO_SKIPPED (assertions_count=0)",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_020_Deferred tax assets heading_source=paragraph classifier_reason=Tax keyword match validator_type=TaxValidator excluded_columns=['Col_0'] scan_rows=4",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': 'fa263e07d776481e8ff294e2de75b27b', 'table_id': 'tbl_020_Deferred_tax_assets', 'table_index': 19, 'validation_status': 'Validated', 'heading': 'Deferred tax assets', 'validator_type': 'TaxValidator', 'extractor_engine': 'oox",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_021_Accounts_payable_to_suppliers_detailed_by_signific chosen_numeric_columns=['1', '2', '3', '4'] excluded_code_columns=['0']",
+          "INFO: quality_audit.core.validators.generic_validator: Table accounts payable to suppliers detailed by signific: excluded code columns (n=1): ['0'], method=role_based",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 3, 4 (scores 0.88, 0.86)",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=9, method=rule_c_sum_equation, candidates=[2, 9], equations_solved=2"
+        ],
+        "fs_preview": [
+          "table_id: tbl_022_Account |  | ",
+          "Status: FAIL / Reason: CO |  | ",
+          "FS casting range: rows 37 |  | ",
+          "Accounts payable to suppl |  | ",
+          "0 | 1 | 2"
+        ],
+        "sheet_shape": "93 rows x 3 cols"
+      },
+      {
+        "table_id": "tbl_019_Construction_in_progress",
+        "validator_type": "GenericTableValidator",
+        "status": "WARN",
+        "total_row_method": "row_classifier",
+        "quality_score": 1.0,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_019_Construction_in_progress",
+          "Status: WARN / Reason: COLUMN_TOTAL_VALIDATION",
+          "Trạng thái kiểm tra: WARN: Bảng movement/reconciliation — bỏ qua FAIL sum-check (downgraded). 2 sai lệch. Cột 2: Tổng chi tiết = 56,710,361.00, Tổng trên bảng = 197,868,137.00, Sai lệch = -141,157,776; Cột 3: Tổng chi tiết = 75,217,041.00, Tổng trên bảng = 141,157,776.00, Sai lệch = -65,940,735",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 5, 6 (scores 0.93, 0.87)",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 5, 6 (scores 0.93, 0.87)",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_017_Tangible fixed assets heading_source=paragraph classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=[] scan_rows=21",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': 'fa263e07d776481e8ff294e2de75b27b', 'table_id': 'tbl_017_Tangible_fixed_assets', 'table_index': 16, 'validation_status': 'Validated', 'heading': 'Tangible fixed assets', 'validator_type': 'GenericTableValidator', 'extractor_",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_018_Intangible_fixed_assets chosen_numeric_columns=['1'] excluded_code_columns=['0']",
+          "INFO: quality_audit.core.validators.generic_validator: Table intangible fixed assets: excluded code columns (n=1): ['0'], method=role_based",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=17, method=row_classifier, candidates=[3, 8, 10, 14, 16, 17]"
+        ],
+        "fs_preview": [
+          "table_id: tbl_019_Constru |  | ",
+          "Status: WARN / Reason: CO |  | ",
+          "FS casting range: rows 33 |  | ",
+          "Construction in progress  |  | ",
+          "0 | 1 | 2"
+        ],
+        "sheet_shape": "93 rows x 3 cols"
+      },
+      {
+        "table_id": "tbl_014_Inventories",
+        "validator_type": "GenericTableValidator",
+        "status": "FAIL",
+        "total_row_method": "rule_c_sum_equation",
+        "quality_score": 0.9,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_014_Inventories",
+          "Status: FAIL / Reason: COLUMN_TOTAL_VALIDATION",
+          "Trạng thái kiểm tra: FAIL: Kiểm tra công thức: 1 sai lệch. Cột 4: Tổng chi tiết = 11,139,714,873,463.00, Tổng trên bảng = 12,251,018,287,013.00, Sai lệch = -1,111,303,413,550",
+          "INFO: quality_audit.core.validators.generic_validator: generic_validator: table_id=tbl_012_Bad_and_doubtful_debts classifier= final_status=PASS assertions_count=2 no_assertion_reason=None",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_012_Bad and doubtful debts heading_source=paragraph classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=['0'] scan_rows=10",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': '0bad61e9753e446585899ba648b24623', 'table_id': 'tbl_012_Bad_and_doubtful_debts', 'table_index': 11, 'validation_status': 'Validated', 'heading': 'Bad and doubtful debts', 'validator_type': 'GenericTableValidator', 'extracto",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_013_2018_VND chosen_numeric_columns=['1', '2'] excluded_code_columns=['0']",
+          "INFO: quality_audit.core.validators.generic_validator: Table 2018 vnd: excluded code columns (n=1): ['0'], method=role_based",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=5, method=row_classifier, candidates=[2, 5]",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 1.00, 1.00)"
+        ],
+        "fs_preview": [
+          "table_id: tbl_014_Invento |  |  |  | ",
+          "Status: FAIL / Reason: CO |  |  |  | ",
+          "FS casting range: rows 30 |  |  |  | ",
+          "Inventories [tbl_014_Inve |  |  |  | ",
+          "0 | 1 | 2 | 3 | 4"
+        ],
+        "sheet_shape": "94 rows x 5 cols"
+      },
+      {
+        "table_id": "tbl_037_Foreign_currencies",
+        "validator_type": "GenericTableValidator",
+        "status": "FAIL",
+        "total_row_method": "rule_c_sum_equation",
+        "quality_score": 0.9,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_037_Foreign_currencies",
+          "Status: FAIL / Reason: COLUMN_TOTAL_VALIDATION",
+          "Trạng thái kiểm tra: FAIL: Kiểm tra công thức: 1 sai lệch. Cột 5: Tổng chi tiết = 5,647,525,142.00, Tổng trên bảng = 18,138,271,916.00, Sai lệch = -12,490,746,774",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_035_VND heading_source=table_first_row classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=['0', '2'] scan_rows=7",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': '0bad61e9753e446585899ba648b24623', 'table_id': 'tbl_035_VND', 'table_index': 34, 'validation_status': 'Validated', 'heading': 'VND', 'validator_type': 'GenericTableValidator', 'extractor_engine': 'ooxml', 'quality_score': 1",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_036_31_12_2018_VND chosen_numeric_columns=['0', '1', '2'] excluded_code_columns=[]",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 1.00, 1.00)",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=6, method=rule_b_blank_label, candidates=[6]",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 1.00, 1.00)",
+          "INFO: quality_audit.core.validators.generic_validator: Table 31/12/2018 vnd: sum-to-total (P3.1) matched; added 2 assertions"
+        ],
+        "fs_preview": [
+          "table_id: tbl_037_Foreign |  |  |  | ",
+          "Status: FAIL / Reason: CO |  |  |  | ",
+          "FS casting range: rows 66 |  |  |  | ",
+          "Foreign currencies [tbl_0 |  |  |  | ",
+          "0 | 1 | 2 | 3 | 4"
+        ],
+        "sheet_shape": "91 rows x 5 cols"
+      },
+      {
+        "table_id": "tbl_013_2018_VND",
+        "validator_type": "GenericTableValidator",
+        "status": "WARN",
+        "total_row_method": "row_classifier",
+        "quality_score": 1.0,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_013_2018_VND",
+          "Status: WARN / Reason: COLUMN_TOTAL_VALIDATION",
+          "Trạng thái kiểm tra: WARN: Bảng movement/reconciliation — bỏ qua FAIL sum-check (downgraded). 2 sai lệch. Roll-forward (OB + movements ≈ CB) - Cột 1: Kỳ vọng=77,355,578,671.00, Thực tế=68,658,078,215.00, Sai lệch=8,697,500,456.00 (rel); Roll-forward (OB + movements ≈ CB) - Cột 2: Kỳ vọng=80,585,609,",
+          "INFO: quality_audit.core.validators.generic_validator: generic_validator: table_id=tbl_011_Other_short_term_receivables classifier= final_status=PASS assertions_count=2 no_assertion_reason=None",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_011_Other short-term receivables heading_source=paragraph classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=['0'] scan_rows=9",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': '0bad61e9753e446585899ba648b24623', 'table_id': 'tbl_011_Other_short_term_receivables', 'table_index': 10, 'validation_status': 'Validated', 'heading': 'Other short-term receivables', 'validator_type': 'GenericTableValidator",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_012_Bad_and_doubtful_debts chosen_numeric_columns=['1', '2', '3', '5', '6', '7', '8'] excluded_code_columns=['0']",
+          "INFO: quality_audit.core.validators.generic_validator: Table bad and doubtful debts: excluded code columns (n=1): ['0'], method=role_based",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 7, 8 (scores 0.67, 0.50)",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=9, method=rule_c_sum_equation, candidates=[9], equations_solved=2"
+        ],
+        "fs_preview": [
+          "table_id: tbl_013_2018_VN |  | ",
+          "Status: WARN / Reason: CO |  | ",
+          "FS casting range: rows 29 |  | ",
+          "2018 VND [tbl_013_2018_VN |  | ",
+          "0 | 1 | 2"
+        ],
+        "sheet_shape": "89 rows x 3 cols"
+      },
+      {
+        "table_id": "tbl_015_2018_VND",
+        "validator_type": "GenericTableValidator",
+        "status": "WARN",
+        "total_row_method": "row_classifier",
+        "quality_score": 1.0,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_015_2018_VND",
+          "Status: WARN / Reason: COLUMN_TOTAL_VALIDATION",
+          "Trạng thái kiểm tra: WARN: Bảng movement/reconciliation — bỏ qua FAIL sum-check (downgraded). 2 sai lệch. Roll-forward (OB + movements ≈ CB) - Cột 1: Kỳ vọng=5,315,178,548.00, Thực tế=695,282,603.00, Sai lệch=4,619,895,945.00 (rel); Roll-forward (OB + movements ≈ CB) - Cột 2: Kỳ vọng=26,224,871,336.",
+          "INFO: quality_audit.core.validators.generic_validator: generic_validator: table_id=tbl_013_2018_VND classifier= final_status=WARN assertions_count=2 no_assertion_reason=None",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_013_2018 VND heading_source=table_first_row classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=['0'] scan_rows=6",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': '0bad61e9753e446585899ba648b24623', 'table_id': 'tbl_013_2018_VND', 'table_index': 12, 'validation_status': 'Validated', 'heading': '2018 VND', 'validator_type': 'GenericTableValidator', 'extractor_engine': 'ooxml', 'quality",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_014_Inventories chosen_numeric_columns=['1', '3'] excluded_code_columns=['0']",
+          "INFO: quality_audit.core.validators.generic_validator: Table inventories: excluded code columns (n=1): ['0'], method=role_based",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 3, 4 (scores 0.78, 0.25)",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=10, method=rule_c_sum_equation, candidates=[10], equations_solved=2"
+        ],
+        "fs_preview": [
+          "table_id: tbl_015_2018_VN |  | ",
+          "Status: WARN / Reason: CO |  | ",
+          "FS casting range: rows 31 |  | ",
+          "2018 VND [tbl_015_2018_VN |  | ",
+          "0 | 1 | 2"
+        ],
+        "sheet_shape": "89 rows x 3 cols"
+      }
+    ]
+  },
+  "EQUITY_FORMULA_CHECK": {
+    "count": 2,
+    "items": [
+      {
+        "table_id": "tbl_030_Changes_in_owners__equity",
+        "validator_type": "EquityValidator",
+        "status": "FAIL",
+        "total_row_method": NaN,
+        "quality_score": 1.0,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_030_Changes_in_owners__equity",
+          "Status: FAIL / Reason: EQUITY_FORMULA_CHECK",
+          "Trạng thái kiểm tra: FAIL: Changes in owners' equity - kiểm tra công thức: 3 sai lệch. HÀNG: Balance at (thứ 2) - Cột 3: Tính=106,223,262, Trên bảng=415,552,678, Δ=-309,329,416, |Δ|=309,329,416.00, rel%=74.44%, tolerance=rel; HÀNG: Balance at (thứ 2) - Cột 4: Tính=106,223,262, Trên bảng=543,182,096,",
+          "INFO: quality_audit.core.validators.generic_validator: Table annual interest rate: excluded code columns (n=4): ['1', '2', '4', '6'], method=role_based",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: no adjacent pair in last 5 columns with numeric evidence >= 0.25",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric: candidate_cols was empty, falling back to all columns except exclude: ['0', '3', '5', '7']",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric: Evaluating 1 candidates with candidate_cols=['0', '3', '5', '7'] (amount_cols empty: True)",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric candidate idx=14: numeric_count=4, position_score=8.8, has_details_above=False, total_score=408.8",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric: best_fallback=14, best_score=408.8",
+          "INFO: quality_audit.core.validators.base_validator: Total row fallback selected: idx=14, method=safe_fallback_last_numeric, numeric_count=4, score=408.8"
+        ],
+        "fs_preview": [
+          "table_id: tbl_030_Changes |  |  | ",
+          "Status: FAIL / Reason: EQ |  |  | ",
+          "FS casting range: rows 50 |  |  | ",
+          "Changes in owners’ equity |  |  | ",
+          "0 | 1 | 2 | 3"
+        ],
+        "sheet_shape": "92 rows x 4 cols"
+      },
+      {
+        "table_id": "tbl_033_Changes_in_owners__equity",
+        "validator_type": "EquityValidator",
+        "status": "FAIL",
+        "total_row_method": NaN,
+        "quality_score": 1.0,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_033_Changes_in_owners__equity",
+          "Status: FAIL / Reason: EQUITY_FORMULA_CHECK",
+          "Trạng thái kiểm tra: FAIL: Changes in owners' equity - kiểm tra công thức: 1 sai lệch. HÀNG: Balance at (thứ 3) - Cột 1: Tính=12,041, Trên bảng=312,018, Δ=-299,977, |Δ|=299,977.00, rel%=96.14%, tolerance=rel",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_031_Short-term borrowings heading_source=paragraph classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=[] scan_rows=6",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': '0bad61e9753e446585899ba648b24623', 'table_id': 'tbl_031_Short_term_borrowings', 'table_index': 30, 'validation_status': 'Validated', 'heading': 'Short-term borrowings', 'validator_type': 'GenericTableValidator', 'extractor_",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_032_Annual_interest_rate chosen_numeric_columns=['0', '3', '4'] excluded_code_columns=['1', '2']",
+          "INFO: quality_audit.core.validators.generic_validator: Table annual interest rate: excluded code columns (n=2): ['1', '2'], method=role_based",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 3, 4 (scores 0.79, 0.93)",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=15, method=rule_b_blank_label, candidates=[15]",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 3, 4 (scores 0.79, 0.93)"
+        ],
+        "fs_preview": [
+          "table_id: tbl_033_Changes |  |  |  | ",
+          "Status: FAIL / Reason: EQ |  |  |  | ",
+          "FS casting range: rows 61 |  |  |  | ",
+          "Changes in owners’ equity |  |  |  | ",
+          "0 | 1 | 2 | 3 | 4"
+        ],
+        "sheet_shape": "93 rows x 5 cols"
+      }
+    ]
+  },
+  "FAIL_TOOL_EXTRACT_LOW_QUALITY": {
+    "count": 2,
+    "items": [
+      {
+        "table_id": "tbl_026_Transfer_from_long_term_borrowings",
+        "validator_type": "GenericTableValidator",
+        "status": "FAIL_TOOL_EXTRACT",
+        "total_row_method": NaN,
+        "quality_score": 0.0,
+        "extractor_engine": "legacy",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_026_Transfer_from_long_term_borrowings",
+          "Status: FAIL_TOOL_EXTRACT / Reason: FAIL_TOOL_EXTRACT_LOW_QUALITY",
+          "Trạng thái kiểm tra: FAIL_TOOL_EXTRACT: Low extraction quality",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 1.00, 1.00)",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=15, method=rule_b_blank_label, candidates=[15]",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 1.00, 1.00)",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 1.00, 1.00)",
+          "INFO: quality_audit.core.validators.generic_validator: generic_validator: table_id=tbl_024_Accrued_expenses classifier= final_status=PASS assertions_count=2 no_assertion_reason=None",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_024_Accrued expenses heading_source=paragraph classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=['0'] scan_rows=16",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': 'fa263e07d776481e8ff294e2de75b27b', 'table_id': 'tbl_024_Accrued_expenses', 'table_index': 23, 'validation_status': 'Validated', 'heading': 'Accrued expenses', 'validator_type': 'GenericTableValidator', 'extractor_engine': '"
+        ],
+        "fs_preview": [
+          "table_id: tbl_026_Transfe |  |  |  |  |  |  | ",
+          "Status: FAIL_TOOL_EXTRACT |  |  |  |  |  |  | ",
+          "FS casting range: rows 44 |  |  |  |  |  |  | ",
+          "Transfer from long-term b |  |  |  |  |  |  | ",
+          "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7"
+        ],
+        "sheet_shape": "91 rows x 18 cols"
+      },
+      {
+        "table_id": "tbl_031_Short_term_borrowings",
+        "validator_type": "GenericTableValidator",
+        "status": "FAIL_TOOL_EXTRACT",
+        "total_row_method": NaN,
+        "quality_score": 0.0,
+        "extractor_engine": "legacy",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_031_Short_term_borrowings",
+          "Status: FAIL_TOOL_EXTRACT / Reason: FAIL_TOOL_EXTRACT_LOW_QUALITY",
+          "Trạng thái kiểm tra: FAIL_TOOL_EXTRACT: Low extraction quality",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=13, method=rule_b_blank_label, candidates=[13]",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 1.00, 1.00)",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 1.00, 1.00)",
+          "INFO: quality_audit.core.validators.generic_validator: Table accrued expenses: sum-to-total (P3.1) matched; added 2 assertions",
+          "INFO: quality_audit.core.validators.generic_validator: generic_validator: table_id=tbl_029_Accrued_expenses classifier= final_status=PASS assertions_count=2 no_assertion_reason=None",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_029_Accrued expenses heading_source=paragraph classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=['0'] scan_rows=14",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': '0bad61e9753e446585899ba648b24623', 'table_id': 'tbl_029_Accrued_expenses', 'table_index': 28, 'validation_status': 'Validated', 'heading': 'Accrued expenses', 'validator_type': 'GenericTableValidator', 'extractor_engine': '"
+        ],
+        "fs_preview": [
+          "table_id: tbl_031_Short_t |  |  |  |  |  |  | ",
+          "Status: FAIL_TOOL_EXTRACT |  |  |  |  |  |  | ",
+          "FS casting range: rows 57 |  |  |  |  |  |  | ",
+          "Short-term borrowings [tb |  |  |  |  |  |  | ",
+          "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7"
+        ],
+        "sheet_shape": "89 rows x 13 cols"
+      }
+    ]
+  },
+  "FAIL_TOOL_EXTRACT_NO_NUMERIC": {
+    "count": 2,
+    "items": [
+      {
+        "table_id": "tbl_012_Other_receivables",
+        "validator_type": "GenericTableValidator",
+        "status": "FAIL_TOOL_EXTRACT",
+        "total_row_method": NaN,
+        "quality_score": 0.8,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_012_Other_receivables",
+          "Status: FAIL_TOOL_EXTRACT / Reason: FAIL_TOOL_EXTRACT_NO_NUMERIC",
+          "Trạng thái kiểm tra: FAIL_TOOL_EXTRACT: No numeric columns to validate",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 1.00, 1.00)",
+          "INFO: quality_audit.core.validators.generic_validator: generic_validator: table_id=tbl_010_Accounts_receivable_from_customers_detailed_by_sig classifier= final_status=PASS assertions_count=2 no_assertion_reason=None",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_010_Accounts receivable from customers detailed by significant customers heading_source=paragraph classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=['0'] scan_rows=8",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': 'fa263e07d776481e8ff294e2de75b27b', 'table_id': 'tbl_010_Accounts_receivable_from_customers_detailed_by_sig', 'table_index': 9, 'validation_status': 'Validated', 'heading': 'Accounts receivable from customers detailed by sig",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_011_Accounts_receivable_from_customers_who_are_related chosen_numeric_columns=['1', '2'] excluded_code_columns=['0']",
+          "INFO: quality_audit.core.validators.generic_validator: Table accounts receivable from customers who are related: excluded code columns (n=1): ['0'], method=role_based",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 0.86, 1.00)"
+        ],
+        "fs_preview": [
+          "table_id: tbl_012_Other_r |  |  | ",
+          "Status: FAIL_TOOL_EXTRACT |  |  | ",
+          "FS casting range: rows 20 |  |  | ",
+          "Other receivables [tbl_01 |  |  | ",
+          "0 | 1 | 2 | 3.0"
+        ],
+        "sheet_shape": "93 rows x 4 cols"
+      },
+      {
+        "table_id": "tbl_005_of_equity_owned_voting_rights",
+        "validator_type": "GenericTableValidator",
+        "status": "FAIL_TOOL_EXTRACT",
+        "total_row_method": NaN,
+        "quality_score": 0.9,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_005_of_equity_owned_voting_rights",
+          "Status: FAIL_TOOL_EXTRACT / Reason: FAIL_TOOL_EXTRACT_NO_NUMERIC",
+          "Trạng thái kiểm tra: FAIL_TOOL_EXTRACT: No numeric columns to validate",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_003_2018_VND chosen_numeric_columns=['2018 VND', '2017 VND'] excluded_code_columns=['Column_0', 'Code']",
+          "INFO: quality_audit.core.validators.generic_validator: Table 2018 vnd: excluded code columns (n=2): ['Column_0', 'Code'], method=role_based",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=22, method=row_classifier, candidates=[4, 14, 22]",
+          "INFO: quality_audit.core.validators.generic_validator: generic_validator: table_id=tbl_003_2018_VND classifier= final_status=INFO assertions_count=0 no_assertion_reason=NO_EVIDENCE",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_003_2018 VND heading_source=table_first_row classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=['Column_0', 'Code', 'Note'] scan_rows=26",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': '0bad61e9753e446585899ba648b24623', 'table_id': 'tbl_003_2018_VND', 'table_index': 2, 'validation_status': 'Validated', 'heading': '2018 VND', 'validator_type': 'GenericTableValidator', 'extractor_engine': 'ooxml', 'quality_",
+          "INFO: quality_audit.core.validators.base_validator: AUTO_CANONICALIZED table (before_shape=(40, 6), after_shape=(40, 5), flags=(False, True, True, False))"
+        ],
+        "fs_preview": [
+          "table_id: tbl_005_of_equi |  |  |  | ",
+          "Status: FAIL_TOOL_EXTRACT |  |  |  | ",
+          "FS casting range: rows 17 |  |  |  | ",
+          "% of equity owned/voting  |  |  |  | ",
+          "0 | 1 | 2 | 3 | 4"
+        ],
+        "sheet_shape": "89 rows x 5 cols"
+      }
+    ]
+  },
+  "FIXED_ASSET_VALIDATION": {
+    "count": 1,
+    "items": [
+      {
+        "table_id": "tbl_017_Tangible_fixed_assets",
+        "validator_type": "GenericTableValidator",
+        "status": "FAIL",
+        "total_row_method": "row_classifier",
+        "quality_score": 0.9,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_017_Tangible_fixed_assets",
+          "Status: FAIL / Reason: FIXED_ASSET_VALIDATION",
+          "Trạng thái kiểm tra: FAIL: Fixed assets - kiểm tra công thức: 1 sai lệch. BSPL = 2,308,571,151.00, Note = 17,295,538.00, Sai lệch = -2,291,275,613",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=7, method=rule_b_blank_label, candidates=[7]",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 0.83, 1.00)",
+          "INFO: quality_audit.core.validators.generic_validator: Table short-term prepaid expenses: sum-to-total (P3.1) matched; added 2 assertions",
+          "INFO: quality_audit.core.validators.generic_validator: generic_validator: table_id=tbl_015_Short_term_prepaid_expenses classifier= final_status=PASS assertions_count=2 no_assertion_reason=None",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_015_Short-term prepaid expenses heading_source=paragraph classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=['0'] scan_rows=8",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': 'fa263e07d776481e8ff294e2de75b27b', 'table_id': 'tbl_015_Short_term_prepaid_expenses', 'table_index': 14, 'validation_status': 'Validated', 'heading': 'Short-term prepaid expenses', 'validator_type': 'GenericTableValidator',",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_016_Long_term_prepaid_expenses chosen_numeric_columns=['1', '2', '3'] excluded_code_columns=['0']"
+        ],
+        "fs_preview": [
+          "table_id: tbl_017_Tangibl |  |  |  |  |  | ",
+          "Status: FAIL / Reason: FI |  |  |  |  |  | ",
+          "FS casting range: rows 28 |  |  |  |  |  | ",
+          "Tangible fixed assets [tb |  |  |  |  |  | ",
+          "0 | 1 | 2 | 3 | 4 | 5 | 6"
+        ],
+        "sheet_shape": "104 rows x 7 cols"
+      }
+    ]
+  },
+  "GenericTableValidator_VALIDATION": {
+    "count": 3,
+    "items": [
+      {
+        "table_id": "tbl_042_Business_costs_by_element",
+        "validator_type": "GenericTableValidator",
+        "status": "WARN",
+        "total_row_method": NaN,
+        "quality_score": 1.0,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_042_Business_costs_by_element",
+          "Status: WARN / Reason: GenericTableValidator_VALIDATION",
+          "Trạng thái kiểm tra: INFO: Bảng không bao gồm số/số tổng",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_040_Other_income chosen_numeric_columns=['1', '2'] excluded_code_columns=['0']",
+          "INFO: quality_audit.core.validators.generic_validator: Table other income: excluded code columns (n=1): ['0'], method=role_based",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 0.83, 1.00)",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=7, method=rule_b_blank_label, candidates=[0, 7]",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 0.83, 1.00)",
+          "INFO: quality_audit.core.validators.generic_validator: generic_validator: table_id=tbl_040_Other_income classifier= final_status=INFO assertions_count=0 no_assertion_reason=NO_EVIDENCE",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_040_Other income heading_source=paragraph classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=['0'] scan_rows=8"
+        ],
+        "fs_preview": [
+          "table_id: tbl_042_Busines |  | ",
+          "Status: WARN / Reason: Ge |  | ",
+          "FS casting range: rows 65 |  | ",
+          "Business costs by element |  | ",
+          "0 | 1 | 2"
+        ],
+        "sheet_shape": "90 rows x 3 cols"
+      },
+      {
+        "table_id": "tbl_045_Non_cash_investing_activity",
+        "validator_type": "GenericTableValidator",
+        "status": "WARN",
+        "total_row_method": NaN,
+        "quality_score": 0.9,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_045_Non_cash_investing_activity",
+          "Status: WARN / Reason: GenericTableValidator_VALIDATION",
+          "Trạng thái kiểm tra: INFO: Bảng không bao gồm số/số tổng",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric: Evaluating 2 candidates with candidate_cols=['1', '2'] (amount_cols empty: False)",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric candidate idx=7: numeric_count=2, position_score=15.0, has_details_above=True, total_score=240.0",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric candidate idx=9: numeric_count=2, position_score=5.0, has_details_above=True, total_score=230.0",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric: best_fallback=7, best_score=240.0",
+          "INFO: quality_audit.core.validators.base_validator: Total row fallback selected: idx=7, method=safe_fallback_last_numeric, numeric_count=2, score=240.0",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 1.00, 1.00)",
+          "INFO: quality_audit.core.validators.generic_validator: generic_validator: table_id=tbl_043_a__Recognised_in_the_statement_of_income classifier= final_status=INFO assertions_count=0 no_assertion_reason=NO_EVIDENCE"
+        ],
+        "fs_preview": [
+          "table_id: tbl_045_Non_cas |  | ",
+          "Status: WARN / Reason: Ge |  | ",
+          "FS casting range: rows 70 |  | ",
+          "Non-cash investing activi |  | ",
+          "0 | 1 | 2"
+        ],
+        "sheet_shape": "87 rows x 3 cols"
+      },
+      {
+        "table_id": "tbl_051_Non_cash_investing_activities",
+        "validator_type": "GenericTableValidator",
+        "status": "WARN",
+        "total_row_method": NaN,
+        "quality_score": 0.9,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_051_Non_cash_investing_activities",
+          "Status: WARN / Reason: GenericTableValidator_VALIDATION",
+          "Trạng thái kiểm tra: INFO: Bảng không bao gồm số/số tổng",
+          "INFO: quality_audit.core.validators.base_validator: table numeric_evidence_score=1.000 (normalize path)",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_049_Reconciliation of effective tax rate heading_source=paragraph classifier_reason=Tax keyword match validator_type=TaxValidator excluded_columns=[] scan_rows=10",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': '0bad61e9753e446585899ba648b24623', 'table_id': 'tbl_049_Reconciliation_of_effective_tax_rate', 'table_index': 48, 'validation_status': 'Validated', 'heading': 'Reconciliation of effective tax rate', 'validator_type': 'TaxVa",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_050_Transaction_value chosen_numeric_columns=['1', '3'] excluded_code_columns=['2']",
+          "INFO: quality_audit.core.validators.generic_validator: Table transaction value: excluded code columns (n=1): ['2'], method=role_based",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: no adjacent pair in last 4 columns with numeric evidence >= 0.25",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric: candidate_cols was empty, falling back to all columns except exclude: ['0', '1', '3']"
+        ],
+        "fs_preview": [
+          "table_id: tbl_051_Non_cas |  | ",
+          "Status: WARN / Reason: Ge |  | ",
+          "FS casting range: rows 99 |  | ",
+          "Non-cash investing activi |  | ",
+          "0 | 1 | 2"
+        ],
+        "sheet_shape": "86 rows x 3 cols"
+      }
+    ]
+  },
+  "NO_NUMERIC_EVIDENCE": {
+    "count": 4,
+    "items": [
+      {
+        "table_id": "tbl_006_2018_VND_000",
+        "validator_type": "BalanceSheetValidator",
+        "status": "FAIL_TOOL_EXTRACT",
+        "total_row_method": NaN,
+        "quality_score": 0.8,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_006_2018_VND_000",
+          "Status: FAIL_TOOL_EXTRACT / Reason: NO_NUMERIC_EVIDENCE",
+          "Column_0 Code Column_2 Code.1 Column_4 Note",
+          "Trạng thái kiểm tra: FAIL_TOOL_EXTRACT: Không tìm thấy cặp cột CY/PY có đủ numeric evidence",
+          "INFO: quality_audit.services.audit_service: Skipped table_id=tbl_003_SKIPPED_FOOTER_SIGNATURE heading_source=table_first_row classifier_reason=Content-based: ASSETS/LIABILITIES detected validator_type=None excluded_columns=[] scan_rows=60",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': 'fa263e07d776481e8ff294e2de75b27b', 'table_id': 'tbl_003_SKIPPED_FOOTER_SIGNATURE', 'table_index': 2, 'validation_status': 'Skipped', 'heading': 'SKIPPED_FOOTER_SIGNATURE', 'validator_type': None, 'extractor_engine': 'ooxml'",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_004_2018_VND_000 chosen_numeric_columns=[\"2018 VND'000\", \"2017 VND'000\"] excluded_code_columns=['Column_0', 'Code']",
+          "INFO: quality_audit.core.validators.generic_validator: Table 2018 vnd'000: excluded code columns (n=2): ['Column_0', 'Code'], method=role_based",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=18, method=row_classifier, candidates=[9, 18]",
+          "INFO: quality_audit.core.validators.generic_validator: generic_validator: table_id=tbl_004_2018_VND_000 classifier= final_status=FAIL assertions_count=2 no_assertion_reason=None"
+        ],
+        "fs_preview": [
+          "table_id: tbl_006_2018_VN |  |  |  |  | ",
+          "Status: FAIL_TOOL_EXTRACT |  |  |  |  | ",
+          "FS casting range: rows 11 |  |  |  |  | ",
+          "2018 VND'000 [tbl_006_201 |  |  |  |  | ",
+          "Column_0 | Code | Column_2 | Code.1 | Column_4 | Note"
+        ],
+        "sheet_shape": "107 rows x 6 cols"
+      },
+      {
+        "table_id": "tbl_018_Intangible_fixed_assets",
+        "validator_type": "GenericTableValidator",
+        "status": "FAIL_TOOL_EXTRACT",
+        "total_row_method": "row_classifier",
+        "quality_score": 1.0,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_018_Intangible_fixed_assets",
+          "Status: FAIL_TOOL_EXTRACT / Reason: NO_NUMERIC_EVIDENCE",
+          "Trạng thái kiểm tra: FAIL_TOOL_EXTRACT: Không có cặp cột CY/PY đủ bằng chứng số",
+          "INFO: quality_audit.core.validators.generic_validator: Table long-term prepaid expenses: excluded code columns (n=1): ['0'], method=role_based",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=7, method=row_classifier, candidates=[3, 7]",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 2, 3 (scores 0.83, 0.83)",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_016_Long-term prepaid expenses heading_source=paragraph classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=[] scan_rows=8",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': 'fa263e07d776481e8ff294e2de75b27b', 'table_id': 'tbl_016_Long_term_prepaid_expenses', 'table_index': 15, 'validation_status': 'Validated', 'heading': 'Long-term prepaid expenses', 'validator_type': 'GenericTableValidator', '",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_017_Tangible_fixed_assets chosen_numeric_columns=['1', '2', '3', '4', '5', '6'] excluded_code_columns=[]",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=19, method=row_classifier, candidates=[3, 9, 11, 16, 18, 19]"
+        ],
+        "fs_preview": [
+          "table_id: tbl_018_Intangi | ",
+          "Status: FAIL_TOOL_EXTRACT | ",
+          "FS casting range: rows 30 | ",
+          "Intangible fixed assets [ | ",
+          "0 | 1"
+        ],
+        "sheet_shape": "102 rows x 2 cols"
+      },
+      {
+        "table_id": "tbl_004_2018_VND",
+        "validator_type": "BalanceSheetValidator",
+        "status": "FAIL_TOOL_EXTRACT",
+        "total_row_method": NaN,
+        "quality_score": 0.8,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_004_2018_VND",
+          "Status: FAIL_TOOL_EXTRACT / Reason: NO_NUMERIC_EVIDENCE",
+          "Column_0 Code Column_2 Code.1 Column_4 Note",
+          "Trạng thái kiểm tra: FAIL_TOOL_EXTRACT: Không tìm thấy cặp cột CY/PY có đủ numeric evidence",
+          "INFO: quality_audit.core.validators.generic_validator: Table 31/12/2018 vnd: excluded code columns (n=2): ['ASSETS', 'Code'], method=role_based",
+          "INFO: quality_audit.core.validators.base_validator: Total row candidate selected: idx=75, method=row_classifier, candidates=[49, 72, 73, 75]",
+          "INFO: quality_audit.core.validators.generic_validator: generic_validator: table_id=tbl_002_31_12_2018_VND classifier= final_status=INFO assertions_count=0 no_assertion_reason=NO_EVIDENCE",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_002_31/12/2018 VND heading_source=table_first_row classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=['ASSETS', 'Code', 'Note'] scan_rows=60",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': '0bad61e9753e446585899ba648b24623', 'table_id': 'tbl_002_31_12_2018_VND', 'table_index': 1, 'validation_status': 'Validated', 'heading': '31/12/2018 VND', 'validator_type': 'GenericTableValidator', 'extractor_engine': 'ooxml",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_003_2018_VND chosen_numeric_columns=['2018 VND', '2017 VND'] excluded_code_columns=['Column_0', 'Code']"
+        ],
+        "fs_preview": [
+          "table_id: tbl_004_2018_VN |  |  |  |  | ",
+          "Status: FAIL_TOOL_EXTRACT |  |  |  |  | ",
+          "FS casting range: rows 12 |  |  |  |  | ",
+          "2018 VND [tbl_004_2018_VN |  |  |  |  | ",
+          "Column_0 | Code | Column_2 | Code.1 | Column_4 | Note"
+        ],
+        "sheet_shape": "123 rows x 6 cols"
+      },
+      {
+        "table_id": "tbl_018_Intangible_fixed_assets",
+        "validator_type": "GenericTableValidator",
+        "status": "FAIL_TOOL_EXTRACT",
+        "total_row_method": "row_classifier",
+        "quality_score": 1.0,
+        "extractor_engine": "ooxml",
+        "sheet_found": true,
+        "log_lines": [
+          "table_id: tbl_018_Intangible_fixed_assets",
+          "Status: FAIL_TOOL_EXTRACT / Reason: NO_NUMERIC_EVIDENCE",
+          "Trạng thái kiểm tra: FAIL_TOOL_EXTRACT: Không có cặp cột CY/PY đủ bằng chứng số",
+          "INFO: quality_audit.core.validators.base_validator: safe_fallback_last_numeric: best_fallback=2, best_score=225.0",
+          "INFO: quality_audit.core.validators.base_validator: Total row fallback selected: idx=2, method=safe_fallback_last_numeric, numeric_count=2, score=225.0",
+          "INFO: quality_audit.utils.column_detector: Strategy 3: selected adjacent pair 1, 2 (scores 1.00, 1.00)",
+          "INFO: quality_audit.core.validators.generic_validator: generic_total_gate: skip ROW_TOTAL (table_id=tbl_016_Other_current_assets) reason=insufficient_detail_rows detail_count=0 total_label=chicken breeders",
+          "INFO: quality_audit.services.audit_service: Validated table_id=tbl_016_Other current assets heading_source=paragraph classifier_reason=Fallback validator_type=GenericTableValidator excluded_columns=[] scan_rows=4",
+          "INFO: quality_audit.services.audit_service: Table observability: {'run_id': '0bad61e9753e446585899ba648b24623', 'table_id': 'tbl_016_Other_current_assets', 'table_index': 15, 'validation_status': 'Validated', 'heading': 'Other current assets', 'validator_type': 'GenericTableValidator', 'extractor_en",
+          "INFO: quality_audit.utils.column_roles: table_id=tbl_017_Tangible_fixed_assets chosen_numeric_columns=['1', '2', '3', '4', '5'] excluded_code_columns=[]"
+        ],
+        "fs_preview": [
+          "table_id: tbl_018_Intangi | ",
+          "Status: FAIL_TOOL_EXTRACT | ",
+          "FS casting range: rows 37 | ",
+          "Intangible fixed assets [ | ",
+          "0 | 1"
+        ],
+        "sheet_shape": "100 rows x 2 cols"
+      }
+    ]
+  }
+}

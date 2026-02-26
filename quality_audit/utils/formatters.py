@@ -2,12 +2,11 @@
 Excel formatting and cell manipulation utilities.
 """
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, cast
 
 from openpyxl.comments import Comment
 
-from ..config.constants import (GREEN_FILL, GREEN_FONT, RED_FILL, RED_FONT,
-                                RIGHT_ALIGN)
+from ..config.constants import GREEN_FILL, GREEN_FONT, RED_FILL, RED_FONT, RIGHT_ALIGN
 
 
 def shorten_sheet_name(name: str, max_length: int = 20) -> str:
@@ -55,10 +54,13 @@ def is_red_fill(cell) -> bool:
         bool: True if cell has red fill
     """
     fill = cell.fill
-    return (
-        fill.start_color.rgb == RED_FILL.start_color.rgb
-        and fill.end_color.rgb == RED_FILL.end_color.rgb
-        and fill.fill_type == RED_FILL.fill_type
+    return cast(
+        bool,
+        (
+            fill.start_color.rgb == RED_FILL.start_color.rgb
+            and fill.end_color.rgb == RED_FILL.end_color.rgb
+            and fill.fill_type == RED_FILL.fill_type
+        ),
     )
 
 
@@ -114,6 +116,10 @@ def apply_crossref_marks(
         r, c = _dfpos_to_excel(mark["row"], mark["col"])
         cell = ws.cell(row=r + start_row, column=c + start_col)
         cell.alignment = RIGHT_ALIGN  # Right align for cross-ref cells
+
+        # Safeguard: never overwrite an already-red cell (priority to validation FAIL fill)
+        if is_red_fill(cell):
+            continue
 
         # Set font color and value based on status
         if mark.get("ok") is True:

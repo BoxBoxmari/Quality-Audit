@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# IDEs
+.vscode/
+.cursor/
+*.swp
+*.swo
+*~
+
+# Project-specific
+results/
+reports/
+data/
+*.xlsx
+*.docx
+log.txt
+test_out.txt
+debug_*.txt
+scripts/analysis_output.txt
+
+# GUI settings (user-specific)
+.quality_audit_gui.json
+
+# Linting/formatting
+.ruff_cache/
+.mypy_cache/
+
+# Agent/Assistant
+.agent/
+.cursor/
+
+# OpenMemory - IDE/Assistant specific rules
+.cursor\rules\openmemory.mdc

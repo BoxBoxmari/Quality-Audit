@@ -5,10 +5,10 @@ Performance benchmark tests for Quality Audit operations.
 import time
 
 from quality_audit.core.cache_manager import LRUCacheManager
-from quality_audit.core.repositories.financial_data_repository import \
-    FinancialDataRepository
-from quality_audit.core.validators.balance_sheet_validator import \
-    BalanceSheetValidator
+from quality_audit.core.repositories.financial_data_repository import (
+    FinancialDataRepository,
+)
+from quality_audit.core.validators.balance_sheet_validator import BalanceSheetValidator
 
 
 class TestPerformanceBenchmarks:

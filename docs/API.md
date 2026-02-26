@@ -19,6 +19,7 @@ AuditService(
 ```
 
 **Parameters**:
+
 - `context`: Audit context with cache and marks (preferred)
 - `cache_manager`: Cache manager (deprecated, use context instead)
 - `word_reader`: Word document reader
@@ -32,10 +33,12 @@ AuditService(
 Execute complete audit workflow.
 
 **Parameters**:
+
 - `word_path`: Path to input Word document
 - `excel_path`: Path to output Excel file
 
 **Returns**:
+
 ```python
 {
     'success': bool,
@@ -48,12 +51,14 @@ Execute complete audit workflow.
 ```
 
 **Raises**:
+
 - `SecurityError`: If file path is invalid or unsafe
 - `FileProcessingError`: If file processing fails
 - `ValidationError`: If validation fails
 - `QualityAuditError`: For unexpected errors
 
 **Example**:
+
 ```python
 from quality_audit.services.audit_service import AuditService
 from quality_audit.core.cache_manager import AuditContext, LRUCacheManager
@@ -77,6 +82,7 @@ AuditContext(cache: Optional[LRUCacheManager] = None)
 ```
 
 **Parameters**:
+
 - `cache`: Cache manager instance (creates new one if not provided)
 
 #### Properties
@@ -90,6 +96,28 @@ AuditContext(cache: Optional[LRUCacheManager] = None)
 
 Clear both cache and marks.
 
+### TaxRateConfig
+
+Configuration object for tax rate resolution.
+
+#### Constructor
+
+```python
+TaxRateConfig(
+    mode: str = "prompt",
+    all_rate: Optional[float] = None,
+    map_data: Optional[Dict[str, float]] = None,
+    default_rate: Optional[float] = None
+)
+```
+
+**Parameters**:
+
+- `mode`: Resolution mode ("prompt", "all", "individual")
+- `all_rate`: Tax rate for "all" mode (decimal, e.g. 0.20)
+- `map_data`: Dictionary mapping filenames to tax rates
+- `default_rate`: Default rate for "individual" mode fallback
+
 ### LRUCacheManager
 
 Thread-safe LRU cache with configurable size limits.
@@ -101,6 +129,7 @@ LRUCacheManager(max_size: int = 1000, ttl_seconds: Optional[float] = None)
 ```
 
 **Parameters**:
+
 - `max_size`: Maximum number of cache entries
 - `ttl_seconds`: Time-to-live in seconds (None for no expiration)
 
@@ -131,6 +160,7 @@ Clear all cache entries.
 Get cache statistics.
 
 **Returns**:
+
 ```python
 {
     'size': int,
@@ -155,6 +185,7 @@ FinancialDataRepository(cache: LRUCacheManager)
 ```
 
 **Parameters**:
+
 - `cache`: Cache manager instance
 
 #### Methods
@@ -210,6 +241,7 @@ Validate file path for security (uses `validate_path_secure` internally).
 Secure path validation with strict directory traversal prevention.
 
 **Parameters**:
+
 - `file_path`: Path to validate
 - `allowed_extensions`: Set of allowed extensions (defaults to `{'.docx', '.xlsx'}`)
 
@@ -224,6 +256,7 @@ Open file safely (uses `open_file_securely` internally).
 Open file with system default application safely.
 
 **Parameters**:
+
 - `file_path`: Path to file to open
 
 **Returns**: True if file was opened successfully
@@ -251,6 +284,7 @@ AsyncWordReader(max_workers: int = 4)
 ```
 
 **Parameters**:
+
 - `max_workers`: Maximum number of worker threads
 
 #### Methods
@@ -307,6 +341,7 @@ ValidationResult(
 ```
 
 **Properties**:
+
 - `status`: Human-readable status message
 - `marks`: List of cell marks for formatting
 - `cross_ref_marks`: List of cross-reference marks

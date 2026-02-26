@@ -1,0 +1,16 @@
+# Quality Audit Tool - Production Dependencies Only
+# Generated: January 23, 2025
+# Purpose: Minimal dependencies for production deployment (main flow only)
+# Approval Required: IT Security Team
+# Render-first: use full requirements.txt + system binaries (Poppler, Tesseract, LibreOffice) on each machine.
+
+# Core data processing
+pandas>=1.5.0,<2.0.0
+numpy>=1.23.0,<2.0.0
+
+# File format support
+openpyxl>=3.0.0,<4.0.0
+python-docx>=0.8.11,<1.0.0
+
+# Note: tkinter is part of Python standard library
+# No additional installation required

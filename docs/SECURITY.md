@@ -191,6 +191,13 @@ assert FileHandler.validate_path_secure(malicious_path) == False
 - [ ] Cache size limits enforced
 - [ ] Error messages don't leak sensitive info
 
+### P5 Regression Gate Checklist (Quality Audit Fix)
+
+- [ ] **Formula injection (P1):** All text cells written to XLSX go through `sanitize_excel_value()` (prefix `=`, `+`, `-`, `@` with tab or apostrophe); numeric cells are not sanitized. Location: `quality_audit/io/excel_writer.py` and `quality_audit/utils/formatters.py`.
+- [ ] **Forensic columns:** XLSX output includes extractor_engine, total_row_method, total_row_index, total_row_confidence, column_classification_method, invariants_failed, heading_source, heading_confidence where applicable.
+- [ ] **Structured logging:** No secrets in logs; audit/validator decisions use low-noise structured fields (e.g. total_row_metadata, invariant flags) for observability without PII.
+- [ ] **Verifier:** Run `pytest`, `ruff check quality_audit/`; run pipeline on 2 DOCX; compare baseline vs after (FAIL_TOOL_EXTRACT and false FAIL/WARN); confirm XLSX has forensic columns and no formula injection when opening file.
+
 ## Incident Response
 
 ### If Security Issue Discovered

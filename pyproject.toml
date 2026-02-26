@@ -1,0 +1,101 @@
+[tool.ruff]
+line-length = 88
+target-version = "py38"
+exclude = [
+    ".agent",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "N",  # pep8-naming
+    "UP", # pyupgrade
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501", # line too long, handled by black
+    "B008", # do not perform function calls in argument defaults
+    "C901", # too complex
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Legacy code - more permissive for older code patterns
+"legacy/*" = [
+    "F401", # unused imports
+    "F403", # import *
+    "F405", # import * usage
+    "F821", # undefined name (legacy code may have missing definitions)
+    "N801", # invalid class name
+    "N802", # invalid function name
+    "N803", # invalid argument name
+    "N806", # invalid variable name
+    "N813", # camelcase imported as lowercase
+    "N815", # mixedCase variable in class scope
+    "N816", # mixedCase variable in global scope
+    "N817",   # camelcase imported as constant
+    "E722",   # bare except
+    "SIM102", # nested if in legacy code
+    "SIM108", # ternary suggestions in legacy code
+    "B007",   # unused loop control variable in legacy code
+]
+
+# Tests - more permissive for test code
+"tests/*" = [
+    "F401", # unused imports in tests
+    "N802", # invalid function name (test functions)
+    "N803", # invalid argument name
+    "S101", # assert used
+    "PLR2004" # magic value comparison
+]
+
+# Config files - allow more flexibility
+"quality_audit/config/*" = [
+    "F401", # unused imports
+    "N815"  # mixedCase variable in class scope
+]
+
+"quality_audit/core/validators/base_validator.py" = [
+    "C405",  # list literal that could be set literal
+    "SIM102", # nested ifs kept for clarity
+    "N802",  # non-snake-case function names for domain-specific terms
+    "N803",  # non-snake-case argument names matching financial abbreviations
+    "N806",  # non-snake-case local variables for financial abbreviations
+]
+
+"quality_audit/core/validators/generic_validator.py" = [
+    "C4",    # comprehensions simplifications in complex legacy logic
+    "SIM",   # structural simplifications that would hurt readability
+    "N8",    # naming conventions for domain-specific abbreviations
+]
+
+# Main entry point - more permissive
+"main.py" = [
+    "F401", # unused imports
+    "E722"  # bare except
+]
+
+# table_isolator: keep Tuple/Optional for py38 (UP006/UP045 suggest 3.9+/3.10+ style)
+"quality_audit/io/extractors/table_isolator.py" = [
+    "UP006", # Tuple -> tuple (py39+)
+    "UP045", # Optional[X] -> X | None (py310+)
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = ["legacy", "tests", ".agent"]

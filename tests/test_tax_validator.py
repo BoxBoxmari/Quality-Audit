@@ -6,8 +6,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from quality_audit.core.cache_manager import (cross_check_cache,
-                                              cross_check_marks)
+from quality_audit.core.cache_manager import cross_check_cache, cross_check_marks
 from quality_audit.core.validators.tax_validator import TaxValidator
 
 
@@ -115,9 +114,5 @@ class TestTaxValidator:
         result = validator.validate(df, "Reconciliation of effective tax rate")
 
         # Verify: Should have cross-ref marks for 'income tax'
-        income_tax_marks = [
-            m
-            for m in result.cross_ref_marks
-            if "income tax" in str(m.get("comment", ""))
-        ]
+        [m for m in result.cross_ref_marks if "income tax" in str(m.get("comment", ""))]
         assert "income tax" in cross_check_marks

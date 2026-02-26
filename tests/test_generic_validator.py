@@ -4,10 +4,12 @@ Tests for GenericValidator fixed assets and cross-checking tables.
 
 import pandas as pd
 
-from quality_audit.core.cache_manager import (cross_check_cache,
-                                              cross_check_marks)
-from quality_audit.core.validators.generic_validator import \
-    GenericTableValidator
+from quality_audit.core.cache_manager import (
+    AuditContext,
+    cross_check_cache,
+    cross_check_marks,
+)
+from quality_audit.core.validators.generic_validator import GenericTableValidator
 
 
 class TestFixedAssetsValidator:
@@ -70,12 +72,13 @@ class TestFixedAssetsValidator:
             }
         )
 
-        validator = GenericTableValidator()
+        ctx = AuditContext()
+        validator = GenericTableValidator(context=ctx)
         result = validator.validate(df, "tangible fixed assets")
 
-        # Verify: Should have cross-ref marks for NBV
+        # Verify: Should have cross-ref marks for NBV (prefer context.marks)
         assert len(result.cross_ref_marks) > 0
-        assert "tangible fixed assets" in cross_check_marks
+        assert validator.context and "tangible fixed assets" in validator.context.marks
 
     def test_fixed_assets_cross_check_cost_account_222(self):
         """Test cross-check for cost with account 222."""
@@ -96,11 +99,12 @@ class TestFixedAssetsValidator:
             }
         )
 
-        validator = GenericTableValidator()
-        result = validator.validate(df, "tangible fixed assets")
+        ctx = AuditContext()
+        validator = GenericTableValidator(context=ctx)
+        validator.validate(df, "tangible fixed assets")
 
-        # Verify: Should have cross-ref marks for account 222
-        assert "222" in cross_check_marks
+        # Verify: Should have cross-ref marks for account 222 (prefer context.marks)
+        assert validator.context and "222" in validator.context.marks
 
     def test_fixed_assets_cross_check_ad_account_223(self):
         """Test cross-check for accumulated depreciation with account 223."""
@@ -122,11 +126,12 @@ class TestFixedAssetsValidator:
             }
         )
 
-        validator = GenericTableValidator()
-        result = validator.validate(df, "tangible fixed assets")
+        ctx = AuditContext()
+        validator = GenericTableValidator(context=ctx)
+        validator.validate(df, "tangible fixed assets")
 
-        # Verify: Should have cross-ref marks for account 223
-        assert "223" in cross_check_marks
+        # Verify: Should have cross-ref marks for account 223 (prefer context.marks)
+        assert validator.context and "223" in validator.context.marks
 
 
 class TestCrossCheckTables:
@@ -149,12 +154,16 @@ class TestCrossCheckTables:
             }
         )
 
-        validator = GenericTableValidator()
+        ctx = AuditContext()
+        validator = GenericTableValidator(context=ctx)
         result = validator.validate(df, "accounts receivable from customers")
 
-        # Verify: Should have cross-ref marks
+        # Verify: Should have cross-ref marks (prefer context.marks)
         assert len(result.cross_ref_marks) > 0
-        assert "accounts receivable from customers" in cross_check_marks
+        assert (
+            validator.context
+            and "accounts receivable from customers" in validator.context.marks
+        )
 
     def test_form_2_cross_check_multiple_accounts(self):
         """Test FORM_2 cross-check at both subtotal and grand total."""
@@ -180,12 +189,14 @@ class TestCrossCheckTables:
             }
         )
 
-        validator = GenericTableValidator()
-        result = validator.validate(
-            df, "revenue from sales of goods and provision of services"
-        )
+        ctx = AuditContext()
+        validator = GenericTableValidator(context=ctx)
+        validator.validate(df, "revenue from sales of goods and provision of services")
 
-        # Verify: Should have cross-ref marks for multiple accounts
-        assert "revenue from sales of goods" in cross_check_marks
-        assert "revenue deductions" in cross_check_marks
-        assert "net revenue (10 = 01 - 02)" in cross_check_marks
+        # Verify: Should have cross-ref marks for multiple accounts (prefer context.marks)
+        assert (
+            validator.context
+            and "revenue from sales of goods" in validator.context.marks
+        )
+        assert "revenue deductions" in validator.context.marks
+        assert "net revenue (10 = 01 - 02)" in validator.context.marks
