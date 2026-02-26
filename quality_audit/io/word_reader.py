@@ -238,32 +238,34 @@ class WordReader:
         text_lower = text_stripped.lower()
         # Whitelist: known valid heading patterns are not junk
         valid_patterns = [
-            r"balance sheet",
-            r"income statement",
-            r"cash flow",
+            r"balance sheet", r"cân đối kế toán",
+            r"income statement", r"kết quả kinh doanh",
+            r"cash flow", r"lưu chuyển tiền",
+            r"equity", r"vốn chủ sở hữu",
             r"note \d+:",  # Note with description
         ]
         if any(re.search(p, text_lower) for p in valid_patterns):
             return False
         # --- Ticket-1 explicit rejection patterns ---
+        words = text_lower.split()
+        
         # Unit-only lines: "Đơn vị tính: VND" / "Unit: VND'000"
         if re.match(
             r"^(unit|đơn\s*vị\s*(tính)?|đvt)\s*:?\s*.{0,20}$",
             text_lower,
         ):
             return True
-        # Year-only with optional currency/unit: "2018 VND'000", "2023"
-        if re.match(
-            "^20\\d{2}\\s*(vnd|usd|eur)?\\s*[\x27\x22]?\\d{0,3}\\s*$",
-            text_lower,
-        ):
-            return True
-        # Currency-unit-only: "VND'000", "USD"
-        if re.match(
-            "^(vnd|usd|eur|\u0111\u1ed3ng)\\s*[\x27\x22]?\\d{0,3}\\s*$",
-            text_lower,
-        ):
-            return True
+            
+        # Sparse lines with year or currency (e.g. "2018 VND'000", "2023", "VND")
+        if len(words) <= 3:
+            # Check for year (e.g. "2023", "Năm 2023")
+            if any(re.match(r"^(19|20)\d{2}$", w) for w in words):
+                return True
+            # Check for pure currency/unit (e.g. "VND", "USD'000")
+            if any(w in ["vnd", "usd", "eur", "đồng"] or "vnd'" in w or "usd'" in w for w in words):
+                # If total words <= 2 and it looks like a unit line, it's junk
+                if len(words) <= 2:
+                    return True
         # --- End Ticket-1 patterns ---
         # Digit/currency density: if > 50% of non-space chars are digits or currency
         digits = sum(1 for c in text_stripped if c.isdigit())
@@ -1168,7 +1170,7 @@ class WordReader:
         paragraphs_since_last_table = 0
         long_paragraph_since_last_table = False
         max_paragraphs_since_table = (
-            8  # ignore heading candidate if more than N paragraphs after last table
+            15  # increased from 8 to 15 to find headings further away from the table
         )
 
         # Keywords for scoring

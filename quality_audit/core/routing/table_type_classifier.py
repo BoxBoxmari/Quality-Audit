@@ -211,13 +211,23 @@ class TableTypeClassifier:
         code_rows = 0
         total_rows = len(table)
         has_keywords = {
-            "assets": False,
-            "liabilities": False,
-            "equity": False,
-            "cash": False,
-            "flows": False,
-            "revenue": False,
-            "profit": False,
+            "assets": False,      # assets, tài sản
+            "liabilities": False, # liabilities, nợ phải trả
+            "equity": False,      # equity, vốn chủ sở hữu
+            "cash": False,        # cash, tiền
+            "flows": False,       # flows, lưu chuyển
+            "revenue": False,     # revenue, doanh thu, sales
+            "profit": False,      # profit, lợi nhuận, lãi
+        }
+        # Keyword mapping for multi-language support
+        keyword_map = {
+            "assets": ["assets", "tài sản"],
+            "liabilities": ["liabilities", "nợ phải trả"],
+            "equity": ["equity", "vốn chủ sở hữu"],
+            "cash": ["cash", "tiền"],
+            "flows": ["flows", "lưu chuyển"],
+            "revenue": ["revenue", "doanh thu", "sales", "thu nhập"],
+            "profit": ["profit", "lợi nhuận", "lãi"],
         }
         # For relaxed BS: "assets in early part" = within first 20 rows of scan
         early_window = 20
@@ -234,11 +244,12 @@ class TableTypeClassifier:
                     [str(x).lower() for x in table.iloc[i] if pd.notna(x)]
                 )
 
-                # Check keywords
-                for k in has_keywords:
-                    if k in row_text:
+                # Check keywords via mapping
+                for k, patterns in keyword_map.items():
+                    if any(p in row_text for p in patterns):
                         has_keywords[k] = True
-                if "assets" in row_text and i < early_window:
+
+                if any(p in row_text for p in keyword_map["assets"]) and i < early_window:
                     has_assets_in_early = True
 
                 # Check for code patterns in first few columns
@@ -278,17 +289,25 @@ class TableTypeClassifier:
 
         # 3. Routing Logic - P0-3: Match legacy routing với guardrails
         # Priority 1: Exact heading match (match legacy check_table_total logic)
-        # Priority 2: Content-based fallback nếu heading unknown/null
+        # Priority 2: Content-based fallback nếu heading unknown/null/garbage
         # Guardrails: Nếu heading match nhưng content không match → route GENERIC_NOTE
 
-        # Relaxed Balance Sheet (unknown/weak headings only): trigger when either
-        # - assets in early part of scan and code_density > 0.2, or
-        # - assets and liabilities anywhere in expanded scan (order irrelevant)
+        # Check if heading is recognized as a major statement
+        recognized_statement_keywords = [
+            "balance sheet", "cân đối kế toán",
+            "statement of income", "income statement", "kết quả kinh doanh",
+            "profit and loss", "p&l",
+            "cash flow", "lưu chuyển tiền tệ", "lưu chuyển tiền",
+            "equity", "vốn chủ sở hữu"
+        ]
+        is_heading_recognized = any(k in heading_lower for k in recognized_statement_keywords)
+
         effective_heading = "" if not use_heading_for_routing else heading_lower
         if (
             not heading
             or heading_lower == ""
             or "unknown" in heading_lower
+            or not is_heading_recognized
             or not use_heading_for_routing
         ):
             # Content-based statement detection

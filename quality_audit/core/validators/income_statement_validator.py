@@ -152,12 +152,30 @@ class IncomeStatementValidator(BaseValidator):
                     context={"failure_reason_code": "NO_NUMERIC_EVIDENCE", **metadata},
                 )
 
-            # Build data map
-            data: Dict[str, Any] = {}
+            # Build data maps
+            data: Dict[str, tuple] = {}
             code_rowpos: Dict[str, int] = {}
+            custom_formulas: Dict[str, List[str]] = {}
+
+            label_cols = metadata.get("label_cols", [])
 
             for ridx, row in tmp.iterrows():
-                code = self._normalize_code(row.get(code_col, ""))
+                # P5: Extract custom inline formulas from descriptions
+                if label_cols:
+                    for l_col in label_cols:
+                        cell_val = row.get(l_col)
+                        if pd.notna(cell_val):
+                            parsed = self._parse_inline_formula(str(cell_val))
+                            if parsed:
+                                t_code, c_list = parsed
+                                # Normalize target code before storing
+                                t_code_norm = self._normalize_code(t_code)
+                                custom_formulas[t_code_norm] = c_list
+                                logger.info("Parsed custom formula for %s: %s", t_code_norm, c_list)
+                                break
+
+                code_raw = row.get(code_col)
+                code = self._normalize_code(code_raw)
                 if not code or not re.match(r"^[0-9]+[A-Z]?$", code):
                     continue
 
@@ -218,10 +236,12 @@ class IncomeStatementValidator(BaseValidator):
             issues = []
             marks = []
 
-            def check(parent, children, label=None):
+            def check(parent, default_children, label=None):
                 parent_norm = self._normalize_code(parent)
                 if parent_norm not in data:
                     return
+
+                children = custom_formulas.get(parent_norm, default_children)
 
                 have_any, cur_sum, prior_sum, missing = self._sum_weighted(
                     data, children
@@ -350,3 +370,54 @@ class IncomeStatementValidator(BaseValidator):
                 missing.append(cn if sign == 1 else f"-{cn}")
 
         return have_any, cur_sum, prior_sum, missing
+
+    def _parse_inline_formula(self, text: str) -> Optional[Tuple[str, List[str]]]:
+        """
+        Parse inline formula from row description.
+        Example: "Lợi nhuận (30 = 20 + (21-22) - 25 - 26)" -> ("30", ["20", "21", "-22", "-25", "-26"])
+        """
+        if not isinstance(text, str):
+            return None
+        
+        match = re.search(r"(\d{2})\s*=\s*([0-9\s\+\-\(\)]+)", text)
+        if not match:
+            return None
+            
+        target_code = match.group(1).strip()
+        expression = match.group(2).strip()
+        
+        clean_exp = expression.replace(" ", "")
+        # Remove trailing unclosed parenthesis if any (can happen if regex consumes the closing bracket of the text)
+        if clean_exp.endswith(")") and clean_exp.count("(") < clean_exp.count(")"):
+            clean_exp = clean_exp[:-1]
+            
+        children = []
+        current_sign = 1
+        sign_stack = [1]
+        
+        tokens = re.findall(r'(\d{2}|\+|\-|\(|\))', clean_exp)
+        
+        for token in tokens:
+            if token == '+':
+                current_sign = 1
+            elif token == '-':
+                current_sign = -1
+            elif token == '(':
+                effective_sign = sign_stack[-1] * current_sign
+                sign_stack.append(effective_sign)
+                current_sign = 1
+            elif token == ')':
+                if len(sign_stack) > 1:
+                    sign_stack.pop()
+            elif re.match(r'^\d{2}$', token):
+                eff_sign = sign_stack[-1] * current_sign
+                if eff_sign == 1:
+                    children.append(token)
+                else:
+                    children.append("-" + token)
+                current_sign = 1
+                
+        if not children:
+            return None
+            
+        return target_code, children
