@@ -256,16 +256,17 @@ class WordReader:
         ):
             return True
             
-        # Sparse lines with year or currency (e.g. "2018 VND'000", "2023", "VND")
-        if len(words) <= 3:
+        # Sparse lines with year, date or currency (e.g. "2018 VND'000", "2023", "VND", "31/12/2018")
+        if len(words) <= 4:
             # Check for year (e.g. "2023", "Năm 2023")
             if any(re.match(r"^(19|20)\d{2}$", w) for w in words):
                 return True
             # Check for pure currency/unit (e.g. "VND", "USD'000")
             if any(w in ["vnd", "usd", "eur", "đồng"] or "vnd'" in w or "usd'" in w for w in words):
-                # If total words <= 2 and it looks like a unit line, it's junk
-                if len(words) <= 2:
-                    return True
+                return True
+            # Check for dates (e.g "31/12/2018")
+            if any(re.match(r"\d{1,2}/\d{1,2}/\d{2,4}", w) for w in words):
+                return True
         # --- End Ticket-1 patterns ---
         # Digit/currency density: if > 50% of non-space chars are digits or currency
         digits = sum(1 for c in text_stripped if c.isdigit())
@@ -1211,6 +1212,7 @@ class WordReader:
                 # V-4: Scan previous 1-8 paragraphs for best candidate
                 best_candidate_text = None
                 best_score: float = 0.0
+                candidates_log = []
                 flags = get_feature_flags()
                 use_heading_v2 = flags.get("heading_inference_v2", False)
 
@@ -1256,13 +1258,21 @@ class WordReader:
                             "báo cáo",
                         ]
                         if any(ph in text_lower for ph in year_context_phrases):
-                            score += 2  # contextual year reference
+                            score += 10  # contextual year reference
                         else:
-                            score += 1  # bare year, weaker signal
+                            score += 0  # bare year, weaker signal
 
                     # 4. Proximity (Closer is better)
                     # Deduct 0.5 per step away
                     score -= idx * 0.5
+
+                    # Update candidates log
+                    if score > 0:
+                        candidates_log.append({
+                            "text": p_text,
+                            "score": score,
+                            "distance": idx
+                        })
 
                     # Update best
                     if score > best_score and score >= 5:  # Threshold 5 to avoid noise
@@ -1305,13 +1315,19 @@ class WordReader:
                 else:
                     heading_confidence = (
                         min(1.0, max(0.0, best_score / 10.0))
-                        if best_score is not None
+                        if getattr(self, "_temp_best_score_placeholder", best_score) is not None
                         else 0.5
                     )
+                
+                # Sort top 3 candidates by score descending
+                top_candidates = sorted(candidates_log, key=lambda x: x["score"], reverse=True)[:3]
+                
                 table_context: Dict[str, Any] = {
                     "heading_source": heading_source,
                     "heading_text": heading_text,
                     "heading_confidence": heading_confidence,
+                    "heading_candidates": top_candidates,
+                    "heading_chosen_reason": f"Highest score ({best_score})" if heading_source == "paragraph" else heading_source
                 }
 
                 # Parse table with multi-engine fallback (OOXML -> Python-docx -> LibreOffice -> legacy)

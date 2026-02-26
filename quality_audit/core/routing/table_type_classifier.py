@@ -238,6 +238,8 @@ class TableTypeClassifier:
             scan_rows = min(60, total_rows)
         else:
             scan_rows = min(20, total_rows)
+            
+        found_codes = set()
         for i in range(scan_rows):
             try:
                 row_text = " ".join(
@@ -253,12 +255,14 @@ class TableTypeClassifier:
                     has_assets_in_early = True
 
                 # Check for code patterns in first few columns
-                # Heuristic: row has numeric code in col 0 or 1
-                for j in range(min(2, len(table.columns))):
+                # Heuristic: row has numeric code in col 0, 1 or 2
+                for j in range(min(3, len(table.columns))):
                     val = str(table.iloc[i, j]).strip()
-                    if re.match(r"^\d{2,}", val) or re.match(
-                        r"^[IVX]+", val
-                    ):  # "10", "11", "IV"
+                    if re.match(r"^\d{2,3}[a-zA-Z]?$", val):
+                        found_codes.add(re.match(r"^(\d{2,3})", val).group(1))
+                        code_rows += 1
+                        break
+                    elif re.match(r"^[IVX]+$", val):
                         code_rows += 1
                         break
             except Exception:
@@ -286,6 +290,30 @@ class TableTypeClassifier:
             has_assets_in_early,
             code_density,
         )
+
+        # Structure-based override (Escape Hatch for GenericNote misclassification)
+        bs_code_matches = len(found_codes.intersection({"100", "110", "270", "300", "440"}))
+        is_code_matches = len(found_codes.intersection({"01", "11", "20", "21", "22", "30", "50", "60"}))
+        cf_code_matches = len(found_codes.intersection({"20", "30", "40", "50", "60", "70"}))
+
+        structure_override = None
+        if bs_code_matches >= 3:
+            structure_override = TableType.FS_BALANCE_SHEET
+        elif "01" in found_codes and "11" in found_codes and is_code_matches >= 3:
+             structure_override = TableType.FS_INCOME_STATEMENT
+        elif cf_code_matches >= 3 and has_keywords["cash"]: # Because CF shares codes with IS
+             structure_override = TableType.FS_CASH_FLOW
+             
+        if structure_override is not None:
+            _ctx["classifier_reason"] = "Structure-based override from column codes"
+            _ctx["classifier_primary_type"] = structure_override.value
+            _ctx["classifier_confidence"] = 0.90
+            return ClassificationResult(
+                structure_override,
+                0.90,
+                ["Structure-based override from column codes"],
+                context=_ctx,
+            )
 
         # 3. Routing Logic - P0-3: Match legacy routing với guardrails
         # Priority 1: Exact heading match (match legacy check_table_total logic)
