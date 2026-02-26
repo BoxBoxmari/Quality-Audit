@@ -406,7 +406,10 @@ class ExcelWriter:
             table = table.map(sanitize_excel_value)
 
             # Create sheet name
+            note_num = result.get("context", {}).get("note_number")
             raw_name = heading if heading else f"Bảng {i + 1}"
+            if note_num:
+                raw_name = f"[Note {note_num}] {raw_name}"
             sheet_name = self._shorten_sheet_name(raw_name)
 
             # Ensure unique sheet name
@@ -507,7 +510,10 @@ class ExcelWriter:
             table.columns = table.columns.map(str)
 
             # Add heading with visible table_id (SCRUM-8)
+            note_num = result.get("context", {}).get("note_number")
             raw_name = heading if heading else f"Bảng {i + 1}"
+            if note_num:
+                raw_name = f"[Note {note_num}] {raw_name}"
             sheet_positions.append((raw_name, current_row))
 
             # SCRUM-8: Get table_id from result and add to anchor_map

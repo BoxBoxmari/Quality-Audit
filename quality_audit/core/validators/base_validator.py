@@ -1982,6 +1982,54 @@ class BaseValidator(ABC):
         diffCB = CY_bal - BSPL_CY_bal
         diffOB = PY_bal - BSPL_PY_bal
 
+        # Ticket 9: Magnitude Sanity Check
+        # If the gap between Note and BSPL is astronomically large (e.g. Note is 1B but BSPL is 1M), 
+        # it's likely a false positive match across sections. Reject the cross-check (do not mark as failed or ok).
+        def _is_suspicious_magnitude(bal_note: float, bal_bspl: float) -> bool:
+            if abs(bal_bspl) > 1000 and abs(bal_note) > 1000:
+                if abs(bal_note) > abs(bal_bspl) * 10 or abs(bal_bspl) > abs(bal_note) * 10:
+                    return True
+            return False
+
+        if _is_suspicious_magnitude(CY_bal, BSPL_CY_bal) or _is_suspicious_magnitude(PY_bal, BSPL_PY_bal):
+            logger.debug(f"Cross-check blocked by magnitude check for {account_name}")
+            return
+
+        # Ticket 9: Section Constraint Validation (Whitelist check)
+        # Prevent "Chi phí trả trước" (Short-term) checking against "Chi phí trả trước" (Long-term)
+        def _validate_section_alignment(target_acct: str, current_heading: str) -> bool:
+            if not current_heading:
+                return True
+                
+            heading_lower = current_heading.lower()
+            acct_lower = target_acct.lower()
+            
+            # Simple whitelist token overlap mapping
+            # Key: BSPL account, Value: Valid tokens that should exist in the Note heading
+            # If the account requires specific note headings, it must match at least one token
+            whitelist_map = {
+                "tài sản cố định hữu hình": ["hữu hình"],
+                "tài sản cố định vô hình": ["vô hình"],
+                "bất động sản đầu tư": ["bất động sản"],
+                "chi phí trả trước dài hạn": ["dài hạn"],
+                "chi phí trả trước ngắn hạn": ["ngắn hạn"],
+                "doanh thu chưa thực hiện dài hạn": ["dài hạn"],
+                "doanh thu chưa thực hiện ngắn hạn": ["ngắn hạn"]
+            }
+            
+            for acct, required_tokens in whitelist_map.items():
+                if acct in acct_lower:
+                    if not any(token in heading_lower for token in required_tokens):
+                        return False # Fails section constraint
+                        
+            return True
+
+        # Extract table heading from dataframe context if injected by higher level
+        current_heading = df.attrs.get("heading", "")
+        if not _validate_section_alignment(account_name, current_heading):
+            logger.debug(f"Cross-check blocked by section constraint alignment check for {account_name}")
+            return
+
         # P2-L2: Relaxed cross-check for minor diffs (allow +/- 1.0 for rounding)
         TOLERANCE = 1.0
         is_okCB = abs(diffCB) <= TOLERANCE

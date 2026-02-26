@@ -141,8 +141,8 @@ class TestGenericValidatorNettingStructure:
         df = pd.DataFrame(
             {
                 "Desc": ["Total income", "Less: expenses", "Net income"],
-                "CY": [1000.0, 200.0, 800.0],
-                "PY": [900.0, 100.0, 800.0],
+                "CY": [1000.0, -200.0, 800.0],
+                "PY": [900.0, -100.0, 800.0],
             }
         )
         df_numeric = df.copy()

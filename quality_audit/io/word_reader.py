@@ -525,6 +525,32 @@ class WordReader:
             row_values = [str(x).strip() for x in df.iloc[row_idx]]
             row_lower = [v.lower() for v in row_values]
 
+            # Ticket 8: Header Promotion Guardrails
+            # 1. Minimum Width Sanity Check
+            non_empty_cells = [v for v in row_values if v]
+            if len(non_empty_cells) < 2 or len(df) < 3:
+                continue
+
+            # 2. Cell Count / Uniqueness Check
+            nunique_text_cells = len(set(v for v in non_empty_cells if not v.replace('.', '', 1).isdigit()))
+            if nunique_text_cells < 2:
+                continue
+
+            # 3. All-caps / Roman numeral filter
+            # Reject if the row represents a section title like "I. TÀI SẢN"
+            first_cell = non_empty_cells[0]
+            if re.match(r'^(I+\.|II+\.|\d+\.)\s*[A-Z\sÀ-Ỵ]+$', first_cell):
+                continue
+
+            # 4. Data Row Check
+            # Row i+1 must have > 50% numeric density
+            next_row_idx = row_idx + 1
+            if next_row_idx < len(df):
+                next_row_vals = [str(x).strip() for x in df.iloc[next_row_idx]]
+                num_density = self._numeric_density(next_row_vals)
+                if num_density <= 0.5:
+                    continue  # Next row is mostly text, so this is likely a paragraph row
+
             # Score this row as header candidate
             score = 0
             has_code = False
@@ -1138,6 +1164,9 @@ class WordReader:
         # Comment 2: reset after each table to avoid heading bleed to next table
         prior_paragraphs: List[Tuple[str, str, bool, bool]] = []
         current_heading = None
+        current_note_number = None
+        paragraphs_since_last_table = 0
+        long_paragraph_since_last_table = False
         max_paragraphs_since_table = (
             8  # ignore heading candidate if more than N paragraphs after last table
         )
@@ -1172,6 +1201,7 @@ class WordReader:
             if block.tag.endswith("sectPr"):
                 prior_paragraphs.clear()
                 current_heading = None
+                current_note_number = None
                 continue
             if block.tag.endswith("tbl"):
                 # Create table object once so it can be used for heading fallback and parsing
@@ -1425,18 +1455,48 @@ class WordReader:
                             e,
                         )
 
-                if self._is_footer_or_signature_table(df):
-                    tables.append(df)
-                    headings.append("SKIPPED_FOOTER_SIGNATURE")
-                    table_contexts.append(table_context)
+                # Ticket 10: Attach note number to context
+                if current_note_number:
+                    table_context["note_number"] = current_note_number
+
+                is_footer = self._is_footer_or_signature_table(df)
+
+                # Ticket 6: Split Table Guardrails
+                should_merge = False
+                if tables and not is_footer and headings[-1] != "SKIPPED_FOOTER_SIGNATURE":
+                    # Proximity Check (Safe distance)
+                    if paragraphs_since_last_table <= 2 and not long_paragraph_since_last_table:
+                        prev_df = tables[-1]
+                        # Schema Validation (Pre-concat)
+                        if len(df.columns) == len(prev_df.columns):
+                            # Type Consistency / Header alignment proxy
+                            prev_heading = headings[-1]
+                            if current_heading is None or current_heading == prev_heading:
+                                should_merge = True
+
+                if should_merge:
+                    # Merge into previous table
+                    # To align columns, we safely reset column names before concat
+                    df_to_merge = df.copy()
+                    df_to_merge.columns = tables[-1].columns
+                    merged_df = pd.concat([tables[-1], df_to_merge], ignore_index=True)
+                    tables[-1] = merged_df
+                    logger.info("Ticket-6: Merged table %s with previous table (proximity <= 2, matching schema)", table_index)
                 else:
-                    tables.append(df)
-                    headings.append(current_heading or "")
-                    table_contexts.append(table_context)
+                    if is_footer:
+                        tables.append(df)
+                        headings.append("SKIPPED_FOOTER_SIGNATURE")
+                        table_contexts.append(table_context)
+                    else:
+                        tables.append(df)
+                        headings.append(current_heading or "")
+                        table_contexts.append(table_context)
 
                 # Comment 2: reset buffer after each table so heading does not bleed to next table
                 prior_paragraphs.clear()
                 current_heading = None
+                paragraphs_since_last_table = 0
+                long_paragraph_since_last_table = False
 
                 # Reset prior paragraphs?
                 # "Notes" heading might apply to multiple tables.
@@ -1463,12 +1523,31 @@ class WordReader:
                 if not text or has_page_break:
                     prior_paragraphs.clear()
                     current_heading = None
+                    # Do not reset note number, as notes span page breaks
                     continue
                 if text:
+                    paragraphs_since_last_table += 1
+                    if len(text) > 200:
+                        long_paragraph_since_last_table = True
+
                     # Extract features for caching
                     is_bold = any(run.bold for run in paragraph.runs)
                     is_upper = text.isupper()
                     style_name = paragraph.style.name if paragraph.style else ""
+
+                    # Ticket 10: Note Number Mapping
+                    # Reset state on major heading (e.g. Appendix, Phụ lục)
+                    if "Heading" in style_name:
+                        text_lower_p = text.lower()
+                        if "appendix" in text_lower_p or "phụ lục" in text_lower_p:
+                            current_note_number = None
+
+                    # Strict regex anchoring
+                    note_match = re.search(r'^(Thuyết minh|Note)\s*(số\s*)?([A-Z0-9\.\-]+)', text, flags=re.IGNORECASE)
+                    if note_match:
+                        # Confidence gate: heading style or strong signal (bold)
+                        if "Heading" in style_name or is_bold:
+                            current_note_number = note_match.group(3)
 
                     prior_paragraphs.append((text, style_name, is_bold, is_upper))
                     # Keep buffer finite

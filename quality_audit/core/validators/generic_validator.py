@@ -1693,6 +1693,13 @@ class GenericTableValidator(BaseValidator):
                 less_row_idx = netting_structure["less"]
                 net_row_idx = netting_structure["net"]
 
+                valid_netting_cols = 0
+                netting_diffs = []
+
+                # Ticket 7: Netting Anchor Fallback
+                less_row_text = str(df.iloc[less_row_idx].values).lower()
+                has_netting_anchor = any(k in less_row_text for k in ["dự phòng", "allowance", "provision"])
+
                 for col_idx, col_name in enumerate(df.columns):
                     if col_name in code_cols_set:
                         continue
@@ -1702,28 +1709,49 @@ class GenericTableValidator(BaseValidator):
                     if pd.isna(total_val) or pd.isna(less_val) or pd.isna(net_val):
                         continue
 
-                    expected_net = total_val - less_val
+                    # Ticket 7: Explicit Sign Requirement (B must be negative)
+                    # We check if less_val is negative. If it's positive, we check if the anchor exists.
+                    if less_val > 0 and not has_netting_anchor:
+                        continue # Skip this column as it violates sign requirement
+
+                    expected_net = total_val + less_val if less_val < 0 else total_val - less_val
                     diff = expected_net - net_val
-                    is_ok = abs(round(diff)) == 0
-                    comment = (
-                        f"Netting validation - Cột {col_idx + 1}: "
-                        f"Total = {total_val:,.2f}, Less = {less_val:,.2f}, "
-                        f"Expected Net = {expected_net:,.2f}, Actual Net = {net_val:,.2f}, "
-                        f"Sai lệch = {diff:,.2f}"
-                    )
-                    marks.append(
-                        {
-                            "row": net_row_idx,
-                            "col": col_idx,
-                            "ok": is_ok,
-                            "comment": None if is_ok else comment,
-                            "rule_id": "NETTING_VALIDATION",
-                        }
-                    )
-                    if not is_ok:
-                        issues.append(comment)
-                # R4: Gate grand-total path when netting was used to avoid double-validate.
-                return
+                    netting_diffs.append((col_idx, diff, total_val, less_val, net_val))
+                    if abs(round(diff)) == 0:
+                        valid_netting_cols += 1
+
+                # Ticket 7: Cross-Column Consistency
+                # A + B = C must hold on >= 2 numeric columns, OR strictly 0 diff for 1 numeric column
+                is_netting_valid_overall = False
+                if len(netting_diffs) >= 2 and valid_netting_cols >= 2:
+                    is_netting_valid_overall = True
+                elif len(netting_diffs) == 1 and valid_netting_cols == 1:
+                    is_netting_valid_overall = True
+
+                if is_netting_valid_overall:
+                    for col_idx, diff, total_val, less_val, net_val in netting_diffs:
+                        is_ok = abs(round(diff)) == 0
+                        comment = (
+                            f"Netting validation - Cột {col_idx + 1}: "
+                            f"Total = {total_val:,.2f}, Less = {less_val:,.2f}, "
+                            f"Expected Net = {(total_val + less_val if less_val < 0 else total_val - less_val):,.2f}, Actual Net = {net_val:,.2f}, "
+                            f"Sai lệch = {diff:,.2f}"
+                        )
+                        marks.append(
+                            {
+                                "row": net_row_idx,
+                                "col": col_idx,
+                                "ok": is_ok,
+                                "comment": None if is_ok else comment,
+                                "rule_id": "NETTING_VALIDATION",
+                            }
+                        )
+                        if not is_ok:
+                            issues.append(comment)
+                    # R4: Gate grand-total path when netting was used to avoid double-validate.
+                    return
+                else:
+                    logger.debug("Netting structure rejected due to cross-column consistency or sign requirement failure.")
 
         def find_block_sum(start_idx):
             """Find sum of values in a block until empty row (numeric-aware)."""
