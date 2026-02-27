@@ -42,6 +42,17 @@ from .base_validator import BaseValidator, ValidationResult
 
 logger = logging.getLogger(__name__)
 
+FORMULA_KEYWORDS = [
+    r"(?i)x\s*\d+(?:\.\d+)?\s*%",
+    r"(?i)\*\s*\d+(?:\.\d+)?\s*%",
+    r"(?i)\b\d+(?:\.\d+)?\s*%\s*x\b",
+    r"(?i)tỷ lệ\b",
+    r"(?i)thuế suất",
+    r"(?i)phần vượt mức",
+    r"(?i)định mức",
+    r"(?i)nhân với",
+]
+
 
 class GenericTableValidator(BaseValidator):
     """Generic validator for standard financial tables."""
@@ -156,6 +167,174 @@ class GenericTableValidator(BaseValidator):
             )
         finally:
             self._current_table_context = {}
+
+    def _evaluate_text_formula(
+        self,
+        df: pd.DataFrame,
+        df_numeric: pd.DataFrame,
+        code_cols_set: set,
+    ) -> Optional[ValidationResult]:
+        """Track 3: Basic parsing of specific text formulas (e.g. x 20% or A = B + C)."""
+        from ...utils.numeric_utils import is_year_like_value
+        import re
+
+        marks = []
+        issues = []
+        evaluated_assertions = 0
+
+        pct_pattern = re.compile(r"(?i)[x\*]\s*(\d+(?:\.\d+)?)\s*%")
+
+        # 1. Percentage formula (x 20% or * 20%)
+        # Scanning from the second row onwards because it refers to the previous row
+        for i in range(1, len(df)):
+            cell_text = str(df.iloc[i, 0]).strip()
+            m = pct_pattern.search(cell_text)
+            if m:
+                pct = float(m.group(1)) / 100.0
+
+                for col_idx, col_name in enumerate(df.columns):
+                    if col_name in code_cols_set:
+                        continue
+
+                    val = df_numeric.iloc[i, col_idx]
+                    prev_val = df_numeric.iloc[i - 1, col_idx]
+
+                    if pd.isna(val) or pd.isna(prev_val):
+                        continue
+
+                    if is_year_like_value(val) or is_year_like_value(prev_val):
+                        continue
+
+                    expected = prev_val * pct
+                    diff = expected - val
+                    is_ok = abs(round(diff)) == 0
+
+                    evaluated_assertions += 1
+
+                    if is_ok:
+                        marks.append(
+                            {
+                                "row": i,
+                                "col": col_idx,
+                                "ok": True,
+                                "rule_id": "TEXT_FORMULA_PERCENTAGE",
+                            }
+                        )
+                    else:
+                        comment = (
+                            f"Cột {col_idx + 1}: Tính theo công thức {pct * 100:g}% "
+                            f"= {expected:,.2f}, thực tế = {val:,.2f}, lệch {diff:,.2f}"
+                        )
+                        marks.append(
+                            {
+                                "row": i,
+                                "col": col_idx,
+                                "ok": False,
+                                "comment": comment,
+                                "rule_id": "TEXT_FORMULA_PERCENTAGE",
+                            }
+                        )
+                        issues.append(comment)
+
+        # 2. Additive formulas (A = B [+-] C) based on codes
+        eq_pattern = re.compile(
+            r"\(?(\d{1,3})\)?\s*=\s*\(?(\d{1,3})\)?\s*([\+\-])\s*\(?(\d{1,3})\)?"
+        )
+
+        # Build mapping of "Code" -> row index if exists
+        code_map = {}
+        if code_cols_set:
+            code_col = list(code_cols_set)[0]
+            for r in range(len(df)):
+                code_val = str(df.iloc[r][code_col]).strip()
+                # Remove parens and extra spaces
+                code_val_clean = re.sub(r"[^\d]", "", code_val)
+                if code_val_clean:
+                    code_map[code_val_clean] = r
+
+        for i in range(len(df)):
+            cell_text = str(df.iloc[i, 0]).strip()
+            m = eq_pattern.search(cell_text)
+            if m:
+                target_id = m.group(1)
+                op1_id = m.group(2)
+                operator = m.group(3)
+                op2_id = m.group(4)
+
+                # Resolve row indices
+                target_r = code_map.get(target_id)
+                op1_r = code_map.get(op1_id)
+                op2_r = code_map.get(op2_id)
+
+                if target_r is None or op1_r is None or op2_r is None:
+                    continue
+
+                for col_idx, col_name in enumerate(df.columns):
+                    if col_name in code_cols_set:
+                        continue
+
+                    target_val = df_numeric.iloc[target_r, col_idx]
+                    op1_val = df_numeric.iloc[op1_r, col_idx]
+                    op2_val = df_numeric.iloc[op2_r, col_idx]
+
+                    if pd.isna(target_val) or pd.isna(op1_val) or pd.isna(op2_val):
+                        continue
+
+                    if is_year_like_value(target_val):
+                        continue
+
+                    if operator == "+":
+                        expected = op1_val + op2_val
+                    else:
+                        expected = op1_val - op2_val
+
+                    diff = expected - target_val
+                    is_ok = abs(round(diff)) == 0
+
+                    evaluated_assertions += 1
+
+                    if is_ok:
+                        marks.append(
+                            {
+                                "row": target_r,
+                                "col": col_idx,
+                                "ok": True,
+                                "rule_id": "TEXT_FORMULA_EQUATION",
+                            }
+                        )
+                    else:
+                        comment = (
+                            f"Cột {col_idx + 1}: Tính theo công thức {cell_text} "
+                            f"= {expected:,.2f}, thực tế = {target_val:,.2f}, lệch {diff:,.2f}"
+                        )
+                        marks.append(
+                            {
+                                "row": target_r,
+                                "col": col_idx,
+                                "ok": False,
+                                "comment": comment,
+                                "rule_id": "TEXT_FORMULA_EQUATION",
+                            }
+                        )
+                        issues.append(comment)
+
+        if evaluated_assertions > 0:
+            status_enum = "FAIL" if issues else "PASS"
+            status_str = (
+                f"FORMULA_EVALUATED: {len(issues)} issues found"
+                if issues
+                else "PASS: Công thức text khớp"
+            )
+            return ValidationResult(
+                status=status_str,
+                marks=marks,
+                cross_ref_marks=[],
+                status_enum=status_enum,
+                context={"issues": issues},
+                assertions_count=evaluated_assertions,
+            )
+
+        return None
 
     def _should_skip_table(self, df: pd.DataFrame, heading_lower: str) -> bool:
         """Check if table should be skipped from validation.
@@ -272,6 +451,44 @@ class GenericTableValidator(BaseValidator):
             )
         else:
             df_numeric = df.astype(object).map(normalize_numeric_column)
+
+        # Track 1: Calculation Mode Guardrail
+        # Check if table label columns contain formula indicators
+        text_cols_to_check = []
+        if len(df.columns) > 0:
+            text_cols_to_check.append(df.columns[0])
+
+        is_formula_table = False
+        for col in text_cols_to_check:
+            col_series = df[col].astype(str).str.strip()
+            # We require the keyword to be on a detail row to trigger the skip
+            for idx, cell_text in col_series.items():
+                if any(re.search(pat, cell_text) for pat in FORMULA_KEYWORDS):
+                    is_formula_table = True
+                    logger.info(
+                        "Table %s skipped due to formula matching: '%s' matched in column",
+                        heading_lower[:50] if heading_lower else "unknown",
+                        cell_text,
+                    )
+                    break
+            if is_formula_table:
+                break
+
+        if is_formula_table:
+            eval_result = self._evaluate_text_formula(
+                df, df_numeric, set(code_cols) if code_cols else set()
+            )
+            if eval_result:
+                return eval_result
+
+            return ValidationResult(
+                status="INFO: Bảng chứa công thức nghiệp vụ (tỷ lệ/giới hạn), bỏ qua auto-sum",
+                marks=[],
+                cross_ref_marks=[],
+                status_enum="INFO_SKIPPED",
+                context={"no_assertion_reason": "FORMULA_TABLE"},
+                assertions_count=0,
+            )
 
         note_col = None
         if self.context:
@@ -1698,7 +1915,9 @@ class GenericTableValidator(BaseValidator):
 
                 # Ticket 7: Netting Anchor Fallback
                 less_row_text = str(df.iloc[less_row_idx].values).lower()
-                has_netting_anchor = any(k in less_row_text for k in ["dự phòng", "allowance", "provision"])
+                has_netting_anchor = any(
+                    k in less_row_text for k in ["dự phòng", "allowance", "provision"]
+                )
 
                 for col_idx, col_name in enumerate(df.columns):
                     if col_name in code_cols_set:
@@ -1712,9 +1931,11 @@ class GenericTableValidator(BaseValidator):
                     # Ticket 7: Explicit Sign Requirement (B must be negative)
                     # We check if less_val is negative. If it's positive, we check if the anchor exists.
                     if less_val > 0 and not has_netting_anchor:
-                        continue # Skip this column as it violates sign requirement
+                        continue  # Skip this column as it violates sign requirement
 
-                    expected_net = total_val + less_val if less_val < 0 else total_val - less_val
+                    expected_net = (
+                        total_val + less_val if less_val < 0 else total_val - less_val
+                    )
                     diff = expected_net - net_val
                     netting_diffs.append((col_idx, diff, total_val, less_val, net_val))
                     if abs(round(diff)) == 0:
@@ -1751,30 +1972,62 @@ class GenericTableValidator(BaseValidator):
                     # R4: Gate grand-total path when netting was used to avoid double-validate.
                     return
                 else:
-                    logger.debug("Netting structure rejected due to cross-column consistency or sign requirement failure.")
+                    logger.debug(
+                        "Netting structure rejected due to cross-column consistency or sign requirement failure."
+                    )
+
+        row_types = None
 
         def find_block_sum(start_idx):
-            """Find sum of values in a block until empty row (numeric-aware)."""
+            """Find sum of values in a block using semantic row boundaries (RowClassifier)."""
+            nonlocal row_types
+            if row_types is None:
+                from ...utils.row_classifier import RowClassifier
+
+                row_types = RowClassifier.classify_rows(df)
+            from ...utils.row_classifier import RowType
+
             sum_vals = [0.0] * len(df.columns)
             count = 0
             i = start_idx + 1
+
             while i < len(df):
+                rt = row_types[i]
+
+                # Check for formula patterns to void block calculation
+                row_str = " ".join(str(c) for c in df.iloc[i]).lower()
+                if any(re.search(pat, row_str) for pat in FORMULA_KEYWORDS):
+                    logger.debug(
+                        "Block summation voided at row %d due to formula keyword.", i
+                    )
+                    return sum_vals, 0, i - 1
+
+                if rt in (RowType.SUBTOTAL, RowType.TOTAL):
+                    # Total is on this exact row, return i-1 so caller's `end1 + 1` points here.
+                    return sum_vals, count, i - 1
+
+                if rt != RowType.DATA:
+                    # Boundary reached (EMPTY, SECTION_TITLE, FOOTER).
+                    # Returns i so caller's `end1 + 1` looks at the row after this boundary.
+                    return sum_vals, count, i
+
                 row_numeric = df_numeric.iloc[i]
-                has_numeric = any(
-                    not pd.isna(row_numeric.iloc[col_idx])
-                    for col_idx, col_name in enumerate(df.columns)
-                    if col_name not in code_cols_set
-                )
-                if not has_numeric:
-                    break
+                has_numeric = False
                 for col_idx, col_name in enumerate(df.columns):
                     if not _should_check_col(str(col_name)):
                         continue
-                    val = df_numeric.iloc[i, col_idx]
+                    val = row_numeric.iloc[col_idx]
                     if not pd.isna(val) and not is_year_like_value(val):
-                        sum_vals[col_idx] += val
+                        sum_vals[col_idx] += float(val)
+                        has_numeric = True
+
+                if not has_numeric:
+                    # Fallback boundary if RowClassifier is overly optimistic about DATA
+                    return sum_vals, count, i
+
                 count += 1
                 i += 1
+
             return sum_vals, count, i
 
         def compare_sum_with_total(sum_vals, total_row, end_row, block_start_idx=None):
@@ -1858,10 +2111,16 @@ class GenericTableValidator(BaseValidator):
                 all(str(cell).strip() == "" for cell in df.iloc[i])
                 for i in range(0, total_row_idx)
             )
+
+            # Use RowClassifier to properly identify intermediate totals
+            from ...utils.row_classifier import RowClassifier, RowType
+
+            rt_list = RowClassifier.classify_rows(df)
             has_subtotal_in_detail = any(
-                "subtotal" in " ".join(str(cell).lower() for cell in df.iloc[i])
+                rt_list[i] in (RowType.SUBTOTAL, RowType.TOTAL)
                 for i in range(0, total_row_idx)
             )
+
             # Only use the direct path for simple additive tables (no blanks/subtotals).
             if not has_blank_in_detail and not has_subtotal_in_detail:
                 total_row = df_numeric.iloc[total_row_idx]

@@ -17,15 +17,15 @@ class TestTableTypeClassifierBalanceSheet:
         """
         rows = []
         # Row 0: assets keyword with code
-        rows.append(["10", "Total Assets"])
+        rows.append(["100", "Total Assets"])
         # Rows 1-29: filler numeric/code rows without liabilities
         for i in range(1, 30):
-            rows.append([str(10 + i), f"Row {i}"])
+            rows.append([str(100 + i), f"Row {i}"])
         # Row 30: liabilities keyword
-        rows.append(["40", "Total Liabilities"])
+        rows.append(["300", "Total Liabilities"])
         # A few more rows
         for i in range(31, 40):
-            rows.append([str(10 + i), f"Row {i}"])
+            rows.append([str(100 + i), f"Row {i}"])
 
         df = pd.DataFrame(rows, columns=["Code", "Description"])
 

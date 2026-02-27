@@ -188,13 +188,13 @@ class WordComConverter:
         docx_ps = self._escape_path_for_powershell(docx_path)
         pdf_ps = self._escape_path_for_powershell(output_pdf_path)
 
-        # PowerShell script: open Word hidden, save as PDF, close.
+        # PowerShell script: open Word hidden, export as PDF, close.
         script = (
             "$ErrorActionPreference = 'Stop';"
             "$word = New-Object -ComObject Word.Application;"
             "$word.Visible = $false;"
             f"$doc = $word.Documents.Open('{docx_ps}');"
-            f"$doc.SaveAs([ref]'{pdf_ps}', [ref]17);"
+            f"$doc.ExportAsFixedFormat('{pdf_ps}', 17);"
             "$doc.Close();"
             "$word.Quit();"
         )
@@ -296,7 +296,10 @@ class FallbackConverter:
 
     def is_available(self) -> bool:
         """Check if any conversion backend is available."""
-        return self._word_com_converter.is_available() or self._local_converter.is_available()
+        return (
+            self._word_com_converter.is_available()
+            or self._local_converter.is_available()
+        )
 
     def get_available_mode(self) -> str:
         """Get the mode that would be used for conversion."""

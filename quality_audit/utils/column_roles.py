@@ -236,7 +236,11 @@ def infer_column_roles(
         ):
             roles[col] = ROLE_NUMERIC
             confidences[col] = min(0.95, 0.5 + numeric_density * 0.5)
-        elif numeric_density < 0.2 and (avg_len < 15 or uniqueness > 0.9):
+        elif (
+            numeric_density < 0.2
+            and (avg_len < 15 or uniqueness > 0.9)
+            and uniqueness > 0.2
+        ):
             roles[col] = ROLE_CODE
             confidences[col] = 0.75
         else:

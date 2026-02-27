@@ -212,6 +212,9 @@ class WordReader:
                 if re.match(r"^[0-9]{2,}[A-Z]?$", text.strip()):
                     continue
 
+                if self._is_heading_junk(text):
+                    continue
+
                 candidates.append(text)
 
         if not candidates:
@@ -238,31 +241,38 @@ class WordReader:
         text_lower = text_stripped.lower()
         # Whitelist: known valid heading patterns are not junk
         valid_patterns = [
-            r"balance sheet", r"cân đối kế toán",
-            r"income statement", r"kết quả kinh doanh",
-            r"cash flow", r"lưu chuyển tiền",
-            r"equity", r"vốn chủ sở hữu",
+            r"balance sheet",
+            r"cân đối kế toán",
+            r"income statement",
+            r"kết quả kinh doanh",
+            r"cash flow",
+            r"lưu chuyển tiền",
+            r"equity",
+            r"vốn chủ sở hữu",
             r"note \d+:",  # Note with description
         ]
         if any(re.search(p, text_lower) for p in valid_patterns):
             return False
         # --- Ticket-1 explicit rejection patterns ---
         words = text_lower.split()
-        
+
         # Unit-only lines: "Đơn vị tính: VND" / "Unit: VND'000"
         if re.match(
-            r"^(unit|đơn\s*vị\s*(tính)?|đvt)\s*:?\s*.{0,20}$",
+            r"^(unit|đơn\s*vị\s*(tính)?|đvt|currency|tỷ\s*giá)\s*:?\s*.{0,20}$",
             text_lower,
         ):
             return True
-            
+
         # Sparse lines with year, date or currency (e.g. "2018 VND'000", "2023", "VND", "31/12/2018")
         if len(words) <= 4:
             # Check for year (e.g. "2023", "Năm 2023")
             if any(re.match(r"^(19|20)\d{2}$", w) for w in words):
                 return True
             # Check for pure currency/unit (e.g. "VND", "USD'000")
-            if any(w in ["vnd", "usd", "eur", "đồng"] or "vnd'" in w or "usd'" in w for w in words):
+            if any(
+                w in ["vnd", "usd", "eur", "đồng"] or "vnd'" in w or "usd'" in w
+                for w in words
+            ):
                 return True
             # Check for dates (e.g "31/12/2018")
             if any(re.match(r"\d{1,2}/\d{1,2}/\d{2,4}", w) for w in words):
@@ -535,14 +545,16 @@ class WordReader:
                 continue
 
             # 2. Cell Count / Uniqueness Check
-            nunique_text_cells = len(set(v for v in non_empty_cells if not v.replace('.', '', 1).isdigit()))
+            nunique_text_cells = len(
+                set(v for v in non_empty_cells if not v.replace(".", "", 1).isdigit())
+            )
             if nunique_text_cells < 2:
                 continue
 
             # 3. All-caps / Roman numeral filter
             # Reject if the row represents a section title like "I. TÀI SẢN"
             first_cell = non_empty_cells[0]
-            if re.match(r'^(I+\.|II+\.|\d+\.)\s*[A-Z\sÀ-Ỵ]+$', first_cell):
+            if re.match(r"^(I+\.|II+\.|\d+\.)\s*[A-Z\sÀ-Ỵ]+$", first_cell):
                 continue
 
             # 4. Data Row Check
@@ -1268,11 +1280,9 @@ class WordReader:
 
                     # Update candidates log
                     if score > 0:
-                        candidates_log.append({
-                            "text": p_text,
-                            "score": score,
-                            "distance": idx
-                        })
+                        candidates_log.append(
+                            {"text": p_text, "score": score, "distance": idx}
+                        )
 
                     # Update best
                     if score > best_score and score >= 5:  # Threshold 5 to avoid noise
@@ -1315,19 +1325,24 @@ class WordReader:
                 else:
                     heading_confidence = (
                         min(1.0, max(0.0, best_score / 10.0))
-                        if getattr(self, "_temp_best_score_placeholder", best_score) is not None
+                        if getattr(self, "_temp_best_score_placeholder", best_score)
+                        is not None
                         else 0.5
                     )
-                
+
                 # Sort top 3 candidates by score descending
-                top_candidates = sorted(candidates_log, key=lambda x: x["score"], reverse=True)[:3]
-                
+                top_candidates = sorted(
+                    candidates_log, key=lambda x: x["score"], reverse=True
+                )[:3]
+
                 table_context: Dict[str, Any] = {
                     "heading_source": heading_source,
                     "heading_text": heading_text,
                     "heading_confidence": heading_confidence,
                     "heading_candidates": top_candidates,
-                    "heading_chosen_reason": f"Highest score ({best_score})" if heading_source == "paragraph" else heading_source
+                    "heading_chosen_reason": f"Highest score ({best_score})"
+                    if heading_source == "paragraph"
+                    else heading_source,
                 }
 
                 # Parse table with multi-engine fallback (OOXML -> Python-docx -> LibreOffice -> legacy)
@@ -1481,15 +1496,25 @@ class WordReader:
 
                 # Ticket 6: Split Table Guardrails
                 should_merge = False
-                if tables and not is_footer and headings[-1] != "SKIPPED_FOOTER_SIGNATURE":
+                if (
+                    tables
+                    and not is_footer
+                    and headings[-1] != "SKIPPED_FOOTER_SIGNATURE"
+                ):
                     # Proximity Check (Safe distance)
-                    if paragraphs_since_last_table <= 2 and not long_paragraph_since_last_table:
+                    if (
+                        paragraphs_since_last_table <= 2
+                        and not long_paragraph_since_last_table
+                    ):
                         prev_df = tables[-1]
                         # Schema Validation (Pre-concat)
                         if len(df.columns) == len(prev_df.columns):
                             # Type Consistency / Header alignment proxy
                             prev_heading = headings[-1]
-                            if current_heading is None or current_heading == prev_heading:
+                            if (
+                                current_heading is None
+                                or current_heading == prev_heading
+                            ):
                                 should_merge = True
 
                 if should_merge:
@@ -1499,7 +1524,10 @@ class WordReader:
                     df_to_merge.columns = tables[-1].columns
                     merged_df = pd.concat([tables[-1], df_to_merge], ignore_index=True)
                     tables[-1] = merged_df
-                    logger.info("Ticket-6: Merged table %s with previous table (proximity <= 2, matching schema)", table_index)
+                    logger.info(
+                        "Ticket-6: Merged table %s with previous table (proximity <= 2, matching schema)",
+                        table_index,
+                    )
                 else:
                     if is_footer:
                         tables.append(df)
@@ -1561,7 +1589,11 @@ class WordReader:
                             current_note_number = None
 
                     # Strict regex anchoring
-                    note_match = re.search(r'^(Thuyết minh|Note)\s*(số\s*)?([A-Z0-9\.\-]+)', text, flags=re.IGNORECASE)
+                    note_match = re.search(
+                        r"^(Thuyết minh|Note)\s*(số\s*)?([A-Z0-9\.\-]+)",
+                        text,
+                        flags=re.IGNORECASE,
+                    )
                     if note_match:
                         # Confidence gate: heading style or strong signal (bold)
                         if "Heading" in style_name or is_bold:

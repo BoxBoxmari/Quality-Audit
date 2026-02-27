@@ -199,7 +199,12 @@ class OOXMLTableGridExtractor:
         inferred_max = 0
         for row in table.rows:
             col_count = 0
+            seen_cells = set()
             for cell in row.cells:
+                if id(cell._element) in seen_cells:
+                    continue
+                seen_cells.add(id(cell._element))
+
                 span = self._get_grid_span(cell._element)
                 if span > 1:
                     grid_span_count += 1
@@ -227,7 +232,12 @@ class OOXMLTableGridExtractor:
 
         for r_idx, row in enumerate(table.rows):
             col_ptr = 0
+            seen_cells = set()
             for cell in row.cells:
+                if id(cell._element) in seen_cells:
+                    continue
+                seen_cells.add(id(cell._element))
+
                 raw_text = cell.text or ""
                 normalized = raw_text.replace("\u00a0", " ").replace("\n", " ").strip()
                 normalized = re.sub(r"\s+", " ", normalized)
@@ -442,9 +452,9 @@ class OOXMLTableGridExtractor:
                             grid[header_row_idx][col_idx] = base
                         else:
                             seen_periods[base] += 1
-                            grid[header_row_idx][
-                                col_idx
-                            ] = f"{base}_{seen_periods[base]}"
+                            grid[header_row_idx][col_idx] = (
+                                f"{base}_{seen_periods[base]}"
+                            )
                     violations.append("duplicate_periods_renamed")
             else:
                 header = [str(c).strip() for c in grid[0]]

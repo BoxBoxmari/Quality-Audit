@@ -211,13 +211,13 @@ class TableTypeClassifier:
         code_rows = 0
         total_rows = len(table)
         has_keywords = {
-            "assets": False,      # assets, tài sản
-            "liabilities": False, # liabilities, nợ phải trả
-            "equity": False,      # equity, vốn chủ sở hữu
-            "cash": False,        # cash, tiền
-            "flows": False,       # flows, lưu chuyển
-            "revenue": False,     # revenue, doanh thu, sales
-            "profit": False,      # profit, lợi nhuận, lãi
+            "assets": False,  # assets, tài sản
+            "liabilities": False,  # liabilities, nợ phải trả
+            "equity": False,  # equity, vốn chủ sở hữu
+            "cash": False,  # cash, tiền
+            "flows": False,  # flows, lưu chuyển
+            "revenue": False,  # revenue, doanh thu, sales
+            "profit": False,  # profit, lợi nhuận, lãi
         }
         # Keyword mapping for multi-language support
         keyword_map = {
@@ -238,7 +238,7 @@ class TableTypeClassifier:
             scan_rows = min(60, total_rows)
         else:
             scan_rows = min(20, total_rows)
-            
+
         found_codes = set()
         for i in range(scan_rows):
             try:
@@ -251,7 +251,10 @@ class TableTypeClassifier:
                     if any(p in row_text for p in patterns):
                         has_keywords[k] = True
 
-                if any(p in row_text for p in keyword_map["assets"]) and i < early_window:
+                if (
+                    any(p in row_text for p in keyword_map["assets"])
+                    and i < early_window
+                ):
                     has_assets_in_early = True
 
                 # Check for code patterns in first few columns
@@ -291,46 +294,78 @@ class TableTypeClassifier:
             code_density,
         )
 
-        # Structure-based override (Escape Hatch for GenericNote misclassification)
-        bs_code_matches = len(found_codes.intersection({"100", "110", "270", "300", "440"}))
-        is_code_matches = len(found_codes.intersection({"01", "11", "20", "21", "22", "30", "50", "60"}))
-        cf_code_matches = len(found_codes.intersection({"20", "30", "40", "50", "60", "70"}))
+        recognized_statement_keywords = [
+            "balance sheet",
+            "cân đối kế toán",
+            "statement of income",
+            "income statement",
+            "kết quả kinh doanh",
+            "profit and loss",
+            "p&l",
+            "cash flow",
+            "cash flows",
+            "lưu chuyển tiền tệ",
+            "lưu chuyển tiền",
+            "equity",
+            "vốn chủ sở hữu",
+        ]
+        is_heading_recognized = any(
+            k in heading_lower for k in recognized_statement_keywords
+        )
 
+        effective_heading = "" if not use_heading_for_routing else heading_lower
+
+        # Structure-based override (Escape Hatch for GenericNote misclassification)
+        # ONLY apply if the heading is not explicitly recognized as a major statement
         structure_override = None
-        if bs_code_matches >= 3:
-            structure_override = TableType.FS_BALANCE_SHEET
-        elif "01" in found_codes and "11" in found_codes and is_code_matches >= 3:
-             structure_override = TableType.FS_INCOME_STATEMENT
-        elif cf_code_matches >= 3 and has_keywords["cash"]: # Because CF shares codes with IS
-             structure_override = TableType.FS_CASH_FLOW
-             
-        if structure_override is not None:
-            _ctx["classifier_reason"] = "Structure-based override from column codes"
-            _ctx["classifier_primary_type"] = structure_override.value
-            _ctx["classifier_confidence"] = 0.90
-            return ClassificationResult(
-                structure_override,
-                0.90,
-                ["Structure-based override from column codes"],
-                context=_ctx,
+        if (
+            not is_heading_recognized
+            or not use_heading_for_routing
+            or "unknown" in heading_lower
+        ):
+            bs_code_matches = len(
+                found_codes.intersection({"100", "110", "270", "300", "440"})
             )
+            is_code_matches = len(
+                found_codes.intersection(
+                    {"01", "11", "20", "21", "22", "30", "50", "60"}
+                )
+            )
+            cf_code_matches = len(
+                found_codes.intersection({"20", "30", "40", "50", "60", "70"})
+            )
+
+            is_exclusive = len(
+                found_codes.intersection({"23", "25", "26", "51", "52", "61", "62"})
+            )
+            cfs_exclusive = len(
+                found_codes.intersection({"08", "09", "13", "14", "15", "16", "17"})
+            )
+
+            if bs_code_matches >= 3:
+                structure_override = TableType.FS_BALANCE_SHEET
+            elif cf_code_matches >= 3 and (has_keywords["cash"] or cfs_exclusive >= 1):
+                structure_override = TableType.FS_CASH_FLOW
+            elif is_code_matches >= 3 and (
+                is_exclusive >= 1 or has_keywords["revenue"] or has_keywords["profit"]
+            ):
+                structure_override = TableType.FS_INCOME_STATEMENT
+
+            if structure_override is not None:
+                _ctx["classifier_reason"] = "Structure-based override from column codes"
+                _ctx["classifier_primary_type"] = structure_override.value
+                _ctx["classifier_confidence"] = 0.90
+                return ClassificationResult(
+                    structure_override,
+                    0.90,
+                    ["Structure-based override from column codes"],
+                    context=_ctx,
+                )
 
         # 3. Routing Logic - P0-3: Match legacy routing với guardrails
         # Priority 1: Exact heading match (match legacy check_table_total logic)
         # Priority 2: Content-based fallback nếu heading unknown/null/garbage
         # Guardrails: Nếu heading match nhưng content không match → route GENERIC_NOTE
-
-        # Check if heading is recognized as a major statement
-        recognized_statement_keywords = [
-            "balance sheet", "cân đối kế toán",
-            "statement of income", "income statement", "kết quả kinh doanh",
-            "profit and loss", "p&l",
-            "cash flow", "lưu chuyển tiền tệ", "lưu chuyển tiền",
-            "equity", "vốn chủ sở hữu"
-        ]
-        is_heading_recognized = any(k in heading_lower for k in recognized_statement_keywords)
-
-        effective_heading = "" if not use_heading_for_routing else heading_lower
         if (
             not heading
             or heading_lower == ""

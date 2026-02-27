@@ -48,6 +48,8 @@ class TableTelemetry:
     # P3: heading-table association for XLSX export
     heading_source: str | None = None
     heading_confidence: float | None = None
+    heading_candidates: List[Dict[str, Any]] | None = None
+    heading_chosen_reason: str | None = None
     # Phase 0: classifier and extractor metadata for observability
     classifier_primary_type: str | None = None
     classifier_confidence: float | None = None
@@ -127,6 +129,8 @@ class RunTelemetry:
                     "vMerge_count": t.vmerge_count,
                     "heading_source": t.heading_source,
                     "heading_confidence": t.heading_confidence,
+                    "heading_candidates": t.heading_candidates,
+                    "heading_chosen_reason": t.heading_chosen_reason,
                     "classifier_primary_type": t.classifier_primary_type,
                     "classifier_confidence": t.classifier_confidence,
                     "classifier_reason": t.classifier_reason,
@@ -294,6 +298,8 @@ class TelemetryCollector:
             vmerge_count = ctx.get("vMerge_count")
             heading_source = ctx.get("heading_source")
             heading_confidence = ctx.get("heading_confidence")
+            heading_candidates = ctx.get("heading_candidates")
+            heading_chosen_reason = ctx.get("heading_chosen_reason")
             classifier_primary_type = ctx.get("classifier_primary_type")
             classifier_confidence = ctx.get("classifier_confidence")
             classifier_reason = ctx.get("classifier_reason")
@@ -313,6 +319,8 @@ class TelemetryCollector:
         else:
             heading_source = None
             heading_confidence = None
+            heading_candidates = None
+            heading_chosen_reason = None
             classifier_primary_type = None
             classifier_confidence = None
             classifier_reason = None
@@ -352,6 +360,8 @@ class TelemetryCollector:
             vmerge_count=vmerge_count,
             heading_source=heading_source,
             heading_confidence=heading_confidence,
+            heading_candidates=heading_candidates,
+            heading_chosen_reason=heading_chosen_reason,
             classifier_primary_type=classifier_primary_type,
             classifier_confidence=classifier_confidence,
             classifier_reason=classifier_reason,
