@@ -72,6 +72,9 @@ FEATURE_FLAGS = {
     "ENABLE_NOTE_NUMBER_MAPPING": True,
     # Phase 2: Classification V2 (shadow mode — compare with V1, don't switch yet)
     "classification_v2_shadow": False,
+    # Phase 5: Big4 Audit Engine
+    "enable_big4_engine": False,
+    "enable_big4_shadow": True,
 }
 
 

@@ -169,6 +169,7 @@ class AuditService(BaseService):
         flags = get_feature_flags()
         use_cf_cross = flags.get("cashflow_cross_table_context", False)
         use_big4_engine = flags.get("enable_big4_engine", False)
+        use_big4_shadow = flags.get("enable_big4_shadow", True)
 
         # Normalize input shape: allow (df, heading) or (df, heading, context)
         normalized_pairs: List[Tuple[pd.DataFrame, Optional[str], Dict]] = []
@@ -384,7 +385,54 @@ class AuditService(BaseService):
         if orig_registry is not None:
             self.context.cash_flow_registry = orig_registry
 
+        if use_big4_shadow and not use_big4_engine:
+            try:
+                big4_results = self._validate_tables_big4(normalized_pairs)
+                self._compare_shadow_results(results, big4_results)
+            except Exception as e:
+                logger.error("Big4 shadow engine failed: %s", str(e), exc_info=True)
+
         return results
+
+    def _compare_shadow_results(
+        self, legacy_results: List[Dict], big4_results: List[Dict]
+    ) -> None:
+        """Compare legacy and Big4 results for A/B testing."""
+        if len(legacy_results) != len(big4_results):
+            logger.warning(
+                "Shadow mode mismatch: Legacy produced %d results, Big4 produced %d results",
+                len(legacy_results),
+                len(big4_results),
+            )
+            return
+
+        divergences = 0
+        for i, (leg, big4) in enumerate(zip(legacy_results, big4_results)):
+            leg_valid = leg.get("is_valid")
+            big4_valid = big4.get("is_valid")
+
+            if leg_valid != big4_valid:
+                divergences += 1
+                logger.info(
+                    "Shadow mode divergence at index %d: Legacy is_valid=%s, Big4 is_valid=%s. "
+                    "Legacy errors: %s, Big4 errors: %s",
+                    i,
+                    leg_valid,
+                    big4_valid,
+                    leg.get("errors", []),
+                    big4.get("errors", []),
+                )
+        if divergences == 0:
+            logger.info(
+                "Shadow mode comparison: All %d results match in valid status.",
+                len(legacy_results),
+            )
+        else:
+            logger.info(
+                "Shadow mode comparison: %d/%d divergences in valid status.",
+                divergences,
+                len(legacy_results),
+            )
 
     def _validate_tables_big4(
         self, normalized_pairs: List[Tuple[pd.DataFrame, Optional[str], Dict]]
