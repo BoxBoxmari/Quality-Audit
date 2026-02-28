@@ -71,6 +71,26 @@ class ValidatorFactory:
             table, heading, heading_confidence=heading_confidence
         )
 
+        # Phase 2: Shadow-mode V2 classification comparison
+        if FEATURE_FLAGS.get("classification_v2_shadow", False):
+            try:
+                from ..classification import TableClassifierV2
+
+                v2_classifier = TableClassifierV2()
+                v2_result = v2_classifier.classify(
+                    table, heading, heading_confidence=heading_confidence
+                )
+                if v2_result.table_type != result.table_type:
+                    logger.info(
+                        "ClassifierV2 shadow divergence: v1=%s v2=%s conf=%.2f heading=%s",
+                        result.table_type.value,
+                        v2_result.table_type.value,
+                        v2_result.confidence,
+                        (heading or "")[:60],
+                    )
+            except Exception:
+                logger.debug("ClassifierV2 shadow failed", exc_info=True)
+
         # Store classification result context for observability (Phase 0: classifier metadata)
         if context and result.context:
             result.context["classifier_primary_type"] = result.table_type.value

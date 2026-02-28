@@ -28,8 +28,8 @@ FEATURE_FLAGS = {
     # Canonicalize DOCX output: shared canonicalizer for writer and validators.
     # Rollout order: validator ON -> writer ON -> merge_aware_extraction ON.
     "enable_canonicalize_validator": True,
-    "enable_canonicalize_writer": False,
-    "enable_merge_aware_extraction": False,
+    "enable_canonicalize_writer": True,
+    "enable_merge_aware_extraction": True,
     # Quality gap: heading inference v2 (junk filter, proximity, section boundary)
     "heading_inference_v2": True,
     # Phase 2: Classifier content override when heading weak; TAX_NOTE only with content evidence
@@ -63,7 +63,15 @@ FEATURE_FLAGS = {
     "use_last_two_columns_fallback": False,
     # Extraction fallback: prefer render-first before python-docx when signals indicate difficulty
     "extraction_fallback_prefer_advanced_before_legacy": True,
-    "extraction_render_first_triggered_mode": "signals_only",  # or "always_off", "always_on"
+    "extraction_render_first_triggered_mode": "always_on",  # or "always_off", "signals_only"
+    # Feature flags for Tickets 6-10
+    "ENABLE_SPLIT_TABLE_MERGE": True,
+    "ENABLE_MATH_NETTING": True,
+    "ENABLE_DENSITY_HEADER_PROMOTION": True,
+    "ENABLE_DUAL_KEY_CROSS_CHECK": True,
+    "ENABLE_NOTE_NUMBER_MAPPING": True,
+    # Phase 2: Classification V2 (shadow mode — compare with V1, don't switch yet)
+    "classification_v2_shadow": False,
 }
 
 

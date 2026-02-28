@@ -98,6 +98,13 @@ Examples:
         help="Path to JSON tax rate mapping file for 'individual' mode",
     )
 
+    parser.add_argument(
+        "--require-render-first",
+        action="store_true",
+        default=False,
+        help="Abort if render-first extraction fails (no OOXML fallback)",
+    )
+
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
 
     # Apply log level so validators and services emit DEBUG when requested

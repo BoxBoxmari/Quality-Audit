@@ -1225,6 +1225,9 @@ class WordReader:
                 best_candidate_text = None
                 best_score: float = 0.0
                 candidates_log = []
+                # Ensure get_feature_flags is imported
+                from quality_audit.config.feature_flags import get_feature_flags
+
                 flags = get_feature_flags()
                 use_heading_v2 = flags.get("heading_inference_v2", False)
 
@@ -1488,34 +1491,67 @@ class WordReader:
                             e,
                         )
 
+                # Import feature flags inside the loop or function to avoid circular imports? No, just import globally.
+                from quality_audit.config.feature_flags import get_feature_flags
+
+                flags = get_feature_flags()
+
                 # Ticket 10: Attach note number to context
-                if current_note_number:
-                    table_context["note_number"] = current_note_number
+                if flags.get("ENABLE_NOTE_NUMBER_MAPPING", True):
+                    if current_note_number:
+                        table_context["note_number"] = current_note_number
 
                 is_footer = self._is_footer_or_signature_table(df)
 
                 # Ticket 6: Split Table Guardrails
                 should_merge = False
-                if (
-                    tables
-                    and not is_footer
-                    and headings[-1] != "SKIPPED_FOOTER_SIGNATURE"
-                ):
-                    # Proximity Check (Safe distance)
+                if flags.get("ENABLE_SPLIT_TABLE_MERGE", True):
                     if (
-                        paragraphs_since_last_table <= 2
-                        and not long_paragraph_since_last_table
+                        tables
+                        and not is_footer
+                        and headings[-1] != "SKIPPED_FOOTER_SIGNATURE"
                     ):
                         prev_df = tables[-1]
-                        # Schema Validation (Pre-concat)
-                        if len(df.columns) == len(prev_df.columns):
-                            # Type Consistency / Header alignment proxy
-                            prev_heading = headings[-1]
-                            if (
-                                current_heading is None
-                                or current_heading == prev_heading
-                            ):
-                                should_merge = True
+                        # Prioritize merging if a page break occurred since the last table
+                        proximity_pass = (
+                            paragraphs_since_last_table <= 2
+                            and not long_paragraph_since_last_table
+                        ) or getattr(self, "_page_break_since_last_table", False)
+
+                        if proximity_pass:
+                            # Schema Validation (Pre-concat)
+                            if len(df.columns) == len(prev_df.columns):
+                                # Type Consistency / Header alignment proxy
+                                prev_heading = headings[-1]
+                                if (
+                                    current_heading is None
+                                    or current_heading == prev_heading
+                                    or getattr(
+                                        self, "_page_break_since_last_table", False
+                                    )
+                                ):
+                                    # Row Continuity Sanity (Crucial for CFS)
+                                    # Check if the first column is likely a Code column
+                                    continuity_broken = False
+                                    if len(df) > 0 and len(prev_df) > 0:
+                                        prev_last_val = str(prev_df.iloc[-1, 0]).strip()
+                                        curr_first_val = str(df.iloc[0, 0]).strip()
+
+                                        # If the new table resets the code to '01', '1', '1.', abort merge
+                                        if curr_first_val in (
+                                            "01",
+                                            "1",
+                                            "1.",
+                                            "01.",
+                                            "I",
+                                        ):
+                                            # Ensure we're actually looking at numeric/roman codes,
+                                            # and the previous isn't ending with '00' or something that naturally precedes 1
+                                            if prev_last_val not in ("0", "00", "0."):
+                                                continuity_broken = True
+
+                                    if not continuity_broken:
+                                        should_merge = True
 
                 if should_merge:
                     # Merge into previous table
@@ -1525,7 +1561,7 @@ class WordReader:
                     merged_df = pd.concat([tables[-1], df_to_merge], ignore_index=True)
                     tables[-1] = merged_df
                     logger.info(
-                        "Ticket-6: Merged table %s with previous table (proximity <= 2, matching schema)",
+                        "Ticket-6: Merged table %s with previous table (proximity/page-break passed, schema matched)",
                         table_index,
                     )
                 else:
@@ -1543,6 +1579,7 @@ class WordReader:
                 current_heading = None
                 paragraphs_since_last_table = 0
                 long_paragraph_since_last_table = False
+                self._page_break_since_last_table = False
 
                 # Reset prior paragraphs?
                 # "Notes" heading might apply to multiple tables.
@@ -1566,11 +1603,23 @@ class WordReader:
                 has_page_break = any(
                     br.get(qn("w:type")) == "page" for br in block.iter(qn("w:br"))
                 )
-                if not text or has_page_break:
+                if has_page_break:
+                    self._page_break_since_last_table = True
+
+                # Ticket 6: Only clear if not doing page break merge logic or we want to keep heading across breaks
+                from quality_audit.config.feature_flags import get_feature_flags
+
+                flags = get_feature_flags()
+                should_keep_heading_on_break = (
+                    flags.get("ENABLE_SPLIT_TABLE_MERGE", True) and has_page_break
+                )
+
+                if not text or (has_page_break and not should_keep_heading_on_break):
                     prior_paragraphs.clear()
                     current_heading = None
                     # Do not reset note number, as notes span page breaks
                     continue
+
                 if text:
                     paragraphs_since_last_table += 1
                     if len(text) > 200:
@@ -1582,22 +1631,37 @@ class WordReader:
                     style_name = paragraph.style.name if paragraph.style else ""
 
                     # Ticket 10: Note Number Mapping
-                    # Reset state on major heading (e.g. Appendix, Phụ lục)
-                    if "Heading" in style_name:
-                        text_lower_p = text.lower()
-                        if "appendix" in text_lower_p or "phụ lục" in text_lower_p:
-                            current_note_number = None
+                    if flags.get("ENABLE_NOTE_NUMBER_MAPPING", True):
+                        # Reset state on major heading (e.g. Appendix, Phụ lục)
+                        if "Heading" in style_name:
+                            text_lower_p = text.lower()
+                            if (
+                                "appendix" in text_lower_p
+                                or "phụ lục" in text_lower_p
+                                or "báo cáo của ban giám đốc" in text_lower_p
+                            ):
+                                current_note_number = None
 
-                    # Strict regex anchoring
-                    note_match = re.search(
-                        r"^(Thuyết minh|Note)\s*(số\s*)?([A-Z0-9\.\-]+)",
-                        text,
-                        flags=re.IGNORECASE,
-                    )
-                    if note_match:
-                        # Confidence gate: heading style or strong signal (bold)
-                        if "Heading" in style_name or is_bold:
-                            current_note_number = note_match.group(3)
+                        # Strict regex anchoring
+                        note_match = re.search(
+                            r"^(Thuyết minh|Note)\s*(số\s*)?([A-Z0-9\.\-]+)",
+                            text,
+                            flags=re.IGNORECASE,
+                        )
+                        if note_match:
+                            # Confidence gate: heading style or strong signal (bold)
+                            if "Heading" in style_name or is_bold:
+                                current_note_number = note_match.group(3)
+                    else:
+                        # Legacy note matching
+                        note_match = re.search(
+                            r"^(Thuyết minh|Note)\s*(số\s*)?([A-Z0-9\.\-]+)",
+                            text,
+                            flags=re.IGNORECASE,
+                        )
+                        if note_match:
+                            if "Heading" in style_name or is_bold:
+                                current_note_number = note_match.group(3)
 
                     prior_paragraphs.append((text, style_name, is_bold, is_upper))
                     # Keep buffer finite

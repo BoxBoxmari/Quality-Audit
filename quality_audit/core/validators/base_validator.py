@@ -4,7 +4,7 @@ Base validator class for financial statement validation.
 
 import logging
 from abc import ABC, abstractmethod
-from math import ceil
+
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
@@ -22,9 +22,6 @@ from ...config.constants import (
     TABLES_NEED_CHECK_SEPARATELY,
     TOTALS_GUARDRAIL_NUMERIC_BELOW,
     TOTALS_LEGACY_BOTTOM_N,
-    TOTALS_RULE_C_MIN_COLUMNS_PCT,
-    TOTALS_TOLERANCE_ABS,
-    TOTALS_TOLERANCE_REL,
     VALID_CODES,
     RuleCriticality,
     ScoringConfig,
@@ -399,6 +396,8 @@ class BaseValidator(ABC):
         When using render-first extractor with BORDERLINE_CONFIDENCE, we don't
         have sufficient confidence to assert PASS. Instead, cap to WARN.
 
+        Ticket 6: Also cap when extraction_engine is ooxml_fallback.
+
         Args:
             table_context: Extraction metadata from WordReader.
 
@@ -410,6 +409,9 @@ class BaseValidator(ABC):
         quality_flags = table_context.get("quality_flags") or []
         # Check for borderline confidence from render-first extractor
         if "BORDERLINE_CONFIDENCE" in quality_flags:
+            return True
+        # Ticket 6: Cap PASS when using OOXML fallback extraction
+        if table_context.get("extraction_engine") == "ooxml_fallback":
             return True
         quality_score = table_context.get("quality_score")
         return quality_score is not None and 0.6 <= quality_score < 0.85
@@ -1444,76 +1446,12 @@ class BaseValidator(ABC):
 
         # Rule C: sum-of-previous with configurable abs/rel tolerance; require ≥ min_cols_pct columns
         # Relaxed: For tables with few columns, reduce min_equations threshold
-        # If only 1-2 amount columns, require at least 1 equation (was 50% = 1 anyway)
-        # If 3-4 columns, require at least 1 equation (was 50% = 2, now relaxed to 1)
-        if len(amount_cols) <= 2:
-            min_equations = 1  # Very relaxed for small tables
-        elif len(amount_cols) <= 4:
-            min_equations = max(1, ceil(len(amount_cols) * 0.33))  # 33% instead of 50%
-        else:
-            min_equations = max(
-                1, ceil(len(amount_cols) * TOTALS_RULE_C_MIN_COLUMNS_PCT)
-            )
-        rule_c_candidates: List[Tuple[int, int]] = []  # (row_idx, equations_solved)
-        for i in range(1, len(df)):
-            row = df.iloc[i]
-            equations_solved = 0
-            for c in amount_cols:
-                above_sum = 0.0
-                for j in range(i):
-                    v = normalize_numeric_column(df.iloc[j].get(c, pd.NA))
-                    if pd.notna(v) and not is_year_like_value(v):
-                        above_sum += float(v)
-                cell_val = normalize_numeric_column(row.get(c, pd.NA))
-                if pd.notna(cell_val):
-                    diff = abs(float(cell_val) - above_sum)
-                    tol = max(
-                        TOTALS_TOLERANCE_ABS,
-                        TOTALS_TOLERANCE_REL * (abs(above_sum) or 1.0),
-                    )
-                    if diff <= tol:
-                        equations_solved += 1
-            if equations_solved >= min_equations:
-                rule_c_candidates.append((i, equations_solved))
-        if rule_c_candidates:
-            # P4: Only pick a candidate that has at least one detail row above
-            valid_rc = [
-                (i, eq) for i, eq in rule_c_candidates if _has_detail_rows_above(i)
-            ]
-            if valid_rc:
-                best_rc = max(valid_rc, key=lambda x: (x[1], x[0]))
-                idx = best_rc[0]
-                eq_count = best_rc[1]
-                tolerance_used = {
-                    "abs": TOTALS_TOLERANCE_ABS,
-                    "rel": TOTALS_TOLERANCE_REL,
-                }
-                logger.info(
-                    "Total row candidate selected: idx=%s, method=rule_c_sum_equation, candidates=%s, equations_solved=%s",
-                    idx,
-                    [t[0] for t in rule_c_candidates],
-                    eq_count,
-                )
-                self._set_total_row_metadata_on_context(
-                    idx,
-                    "rule_c_sum_equation",
-                    exclude_list,
-                    [t[0] for t in rule_c_candidates],
-                    totals_candidates_found=len(rule_c_candidates),
-                    totals_equations_solved=eq_count,
-                    tolerance_used=tolerance_used,
-                )
-                return idx
 
         if flags.get("safe_total_row_selection", True):
             # When no heuristic matched, do not guess a total row (safe behavior)
-            if (
-                not keyword_candidates
-                and not rule_b_candidates
-                and not rule_c_candidates
-            ):
+            if not keyword_candidates and not rule_b_candidates:
                 logger.info(
-                    "Total row: no keyword/rule_b/rule_c candidates; returning None (safe_total_row_selection)"
+                    "Total row: no keyword/rule_b candidates; returning None (safe_total_row_selection)"
                 )
                 return None
             # Last resort: try to find a reasonable total row candidate
@@ -1786,13 +1724,12 @@ class BaseValidator(ABC):
             logger.warning(
                 "Total row not found after all detection methods: "
                 "detected_totals=%s, keyword_candidates=%s, rule_b_candidates=%s, "
-                "rule_c_candidates=%s, numeric_rows=%s, fallback_candidates=%s, "
+                "rule_b_candidates=%s, numeric_rows=%s, fallback_candidates=%s, "
                 "relaxed_candidates=%s, table_size=%s, label_cols=%s, amount_cols=%s, "
                 "exclude_cols=%s",
                 detected_totals,
                 keyword_candidates,
                 rule_b_candidates,
-                [t[0] for t in rule_c_candidates] if rule_c_candidates else [],
                 (
                     numeric_rows[:10]
                     if numeric_rows and len(numeric_rows) > 10
@@ -1983,15 +1920,20 @@ class BaseValidator(ABC):
         diffOB = PY_bal - BSPL_PY_bal
 
         # Ticket 9: Magnitude Sanity Check
-        # If the gap between Note and BSPL is astronomically large (e.g. Note is 1B but BSPL is 1M), 
+        # If the gap between Note and BSPL is astronomically large (e.g. Note is 1B but BSPL is 1M),
         # it's likely a false positive match across sections. Reject the cross-check (do not mark as failed or ok).
         def _is_suspicious_magnitude(bal_note: float, bal_bspl: float) -> bool:
             if abs(bal_bspl) > 1000 and abs(bal_note) > 1000:
-                if abs(bal_note) > abs(bal_bspl) * 10 or abs(bal_bspl) > abs(bal_note) * 10:
+                if (
+                    abs(bal_note) > abs(bal_bspl) * 10
+                    or abs(bal_bspl) > abs(bal_note) * 10
+                ):
                     return True
             return False
 
-        if _is_suspicious_magnitude(CY_bal, BSPL_CY_bal) or _is_suspicious_magnitude(PY_bal, BSPL_PY_bal):
+        if _is_suspicious_magnitude(CY_bal, BSPL_CY_bal) or _is_suspicious_magnitude(
+            PY_bal, BSPL_PY_bal
+        ):
             logger.debug(f"Cross-check blocked by magnitude check for {account_name}")
             return
 
@@ -2000,10 +1942,10 @@ class BaseValidator(ABC):
         def _validate_section_alignment(target_acct: str, current_heading: str) -> bool:
             if not current_heading:
                 return True
-                
+
             heading_lower = current_heading.lower()
             acct_lower = target_acct.lower()
-            
+
             # Simple whitelist token overlap mapping
             # Key: BSPL account, Value: Valid tokens that should exist in the Note heading
             # If the account requires specific note headings, it must match at least one token
@@ -2014,20 +1956,22 @@ class BaseValidator(ABC):
                 "chi phí trả trước dài hạn": ["dài hạn"],
                 "chi phí trả trước ngắn hạn": ["ngắn hạn"],
                 "doanh thu chưa thực hiện dài hạn": ["dài hạn"],
-                "doanh thu chưa thực hiện ngắn hạn": ["ngắn hạn"]
+                "doanh thu chưa thực hiện ngắn hạn": ["ngắn hạn"],
             }
-            
+
             for acct, required_tokens in whitelist_map.items():
                 if acct in acct_lower:
                     if not any(token in heading_lower for token in required_tokens):
-                        return False # Fails section constraint
-                        
+                        return False  # Fails section constraint
+
             return True
 
         # Extract table heading from dataframe context if injected by higher level
         current_heading = df.attrs.get("heading", "")
         if not _validate_section_alignment(account_name, current_heading):
-            logger.debug(f"Cross-check blocked by section constraint alignment check for {account_name}")
+            logger.debug(
+                f"Cross-check blocked by section constraint alignment check for {account_name}"
+            )
             return
 
         # P2-L2: Relaxed cross-check for minor diffs (allow +/- 1.0 for rounding)

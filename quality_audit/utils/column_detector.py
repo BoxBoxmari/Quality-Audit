@@ -176,6 +176,28 @@ class ColumnDetector:
                     float(info.get("parseable_ratio", 0)),
                     float(info.get("digit_presence_ratio", 0)),
                 )
+            # Ticket 3: Semantic header boost / penalty
+            currency_kw = (
+                "vnd",
+                "usd",
+                "eur",
+                "triệu",
+                "million",
+                "dong",
+                "đồng",
+            )
+            for col in last_k:
+                header_lower = str(col).lower()
+                if ColumnDetector.has_year_pattern(str(col)):
+                    scores[col] += 0.3  # Year pattern boost
+                if any(kw in header_lower for kw in currency_kw):
+                    scores[col] += 0.2  # Currency unit boost
+                if (
+                    "%" in header_lower
+                    or "percent" in header_lower
+                    or "tỷ lệ" in header_lower
+                ):
+                    scores[col] -= 0.4  # Percentage penalty
             # Rightmost adjacent pair (prior_col, cur_col) with both >= threshold
             for i in range(len(last_k) - 1, 0, -1):
                 left_col, right_col = last_k[i - 1], last_k[i]

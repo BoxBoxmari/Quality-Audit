@@ -297,11 +297,36 @@ class AuditContext:
         self._last_total_row_metadata_var.set(None)
 
 
+import warnings
+
+
+class DeprecatedLRUCacheManager(LRUCacheManager):
+    """Proxy for cross_check_cache that logs a deprecation warning on first use."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._warned = False
+
+    def _warn(self):
+        if not self._warned:
+            warnings.warn(
+                "cross_check_cache global is deprecated and will be removed in v3.0.0. "
+                "Use AuditContext with dependency injection instead.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            self._warned = True
+
+    def get(self, *args, **kwargs):
+        self._warn()
+        return super().get(*args, **kwargs)
+
+    def set(self, *args, **kwargs):
+        self._warn()
+        return super().set(*args, **kwargs)
+
+
 # Global instances for backward compatibility
-# DEPRECATED: These will be removed in a future version.
-# Use AuditContext with dependency injection instead.
-# Accessing these will trigger a deprecation warning in future versions.
-cross_check_cache = LRUCacheManager(max_size=1000)
+cross_check_cache = DeprecatedLRUCacheManager(max_size=1000)
 # Deprecated: Use AuditContext.marks instead. This global set is maintained for backward compatibility only.
-# Plan removal in future version (e.g., v3.0.0).
-cross_check_marks: Set[str] = set()  # Use set for O(1) membership tests
+cross_check_marks: Set[str] = set()

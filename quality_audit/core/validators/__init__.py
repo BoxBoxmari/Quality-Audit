@@ -2,6 +2,7 @@
 Validators package for financial statement validation.
 """
 
+from .audit_grade_validator import AuditGradeValidator
 from .balance_sheet_validator import BalanceSheetValidator
 from .base_validator import BaseValidator, ValidationResult
 from .cash_flow_validator import CashFlowValidator
@@ -17,4 +18,5 @@ __all__ = [
     "IncomeStatementValidator",
     "CashFlowValidator",
     "GenericTableValidator",
+    "AuditGradeValidator",
 ]

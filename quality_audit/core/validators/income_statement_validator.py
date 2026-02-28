@@ -4,7 +4,7 @@ Income Statement validator implementation.
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -171,7 +171,11 @@ class IncomeStatementValidator(BaseValidator):
                                 # Normalize target code before storing
                                 t_code_norm = self._normalize_code(t_code)
                                 custom_formulas[t_code_norm] = c_list
-                                logger.info("Parsed custom formula for %s: %s", t_code_norm, c_list)
+                                logger.info(
+                                    "Parsed custom formula for %s: %s",
+                                    t_code_norm,
+                                    c_list,
+                                )
                                 break
 
                 code_raw = row.get(code_col)
@@ -371,53 +375,53 @@ class IncomeStatementValidator(BaseValidator):
 
         return have_any, cur_sum, prior_sum, missing
 
-    def _parse_inline_formula(self, text: str) -> Optional[Tuple[str, List[str]]]:
+    def _parse_inline_formula(self, text: str) -> Optional[tuple[str, list[str]]]:
         """
         Parse inline formula from row description.
         Example: "Lợi nhuận (30 = 20 + (21-22) - 25 - 26)" -> ("30", ["20", "21", "-22", "-25", "-26"])
         """
         if not isinstance(text, str):
             return None
-        
+
         match = re.search(r"(\d{2})\s*=\s*([0-9\s\+\-\(\)]+)", text)
         if not match:
             return None
-            
+
         target_code = match.group(1).strip()
         expression = match.group(2).strip()
-        
+
         clean_exp = expression.replace(" ", "")
         # Remove trailing unclosed parenthesis if any (can happen if regex consumes the closing bracket of the text)
         if clean_exp.endswith(")") and clean_exp.count("(") < clean_exp.count(")"):
             clean_exp = clean_exp[:-1]
-            
+
         children = []
         current_sign = 1
         sign_stack = [1]
-        
-        tokens = re.findall(r'(\d{2}|\+|\-|\(|\))', clean_exp)
-        
+
+        tokens = re.findall(r"(\d{2}|\+|\-|\(|\))", clean_exp)
+
         for token in tokens:
-            if token == '+':
+            if token == "+":
                 current_sign = 1
-            elif token == '-':
+            elif token == "-":
                 current_sign = -1
-            elif token == '(':
+            elif token == "(":
                 effective_sign = sign_stack[-1] * current_sign
                 sign_stack.append(effective_sign)
                 current_sign = 1
-            elif token == ')':
+            elif token == ")":
                 if len(sign_stack) > 1:
                     sign_stack.pop()
-            elif re.match(r'^\d{2}$', token):
+            elif re.match(r"^\d{2}$", token):
                 eff_sign = sign_stack[-1] * current_sign
                 if eff_sign == 1:
                     children.append(token)
                 else:
                     children.append("-" + token)
                 current_sign = 1
-                
+
         if not children:
             return None
-            
+
         return target_code, children

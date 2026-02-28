@@ -272,14 +272,12 @@ RULE_TAXONOMY = {
         "extraction",
     ),
     "TABLE_NO_NUMERIC_STRUCTURE": ("Info", RuleCriticality.LOW, "structure"),
+    "EXTRACTION_FALLBACK_OOXML": ("Tool", RuleCriticality.MEDIUM, "extraction"),
+    "NO_TOTAL_AND_NO_COLUMN_CHECK": ("Info", RuleCriticality.LOW, "structure"),
 }
 
 # Phase 4: Totals detection tolerance (Rule C) and min columns threshold
 # Used in base_validator._find_total_row for sum-of-previous equality
-TOTALS_TOLERANCE_ABS = 0.01  # absolute tolerance for sum vs cell
-TOTALS_TOLERANCE_REL = (
-    0.008  # relative (e.g. 0.8% of |above_sum|); relaxed for rounding
-)
 # Equity formula: slightly looser relative tolerance for rounding across balance rows
 EQUITY_TOLERANCE_REL = 0.012
 # Rule C: require at least this fraction of amount columns to satisfy sum-of-previous

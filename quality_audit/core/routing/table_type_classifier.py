@@ -308,6 +308,13 @@ class TableTypeClassifier:
             "lưu chuyển tiền",
             "equity",
             "vốn chủ sở hữu",
+            "statement of financial position",
+            "báo cáo tình hình tài chính",
+            "statement of comprehensive income",
+            "báo cáo kết quả hoạt động kinh doanh",
+            "statement of changes in equity",
+            "báo cáo biến động vốn chủ sở hữu",
+            "financial position",
         ]
         is_heading_recognized = any(
             k in heading_lower for k in recognized_statement_keywords
@@ -338,6 +345,8 @@ class TableTypeClassifier:
             is_exclusive = len(
                 found_codes.intersection({"23", "25", "26", "51", "52", "61", "62"})
             )
+            # Ticket 4: IS-exclusive extended codes (01, 02, 10)
+            is_exclusive_extended = len(found_codes.intersection({"01", "02", "10"}))
             cfs_exclusive = len(
                 found_codes.intersection({"08", "09", "13", "14", "15", "16", "17"})
             )
@@ -347,7 +356,10 @@ class TableTypeClassifier:
             elif cf_code_matches >= 3 and (has_keywords["cash"] or cfs_exclusive >= 1):
                 structure_override = TableType.FS_CASH_FLOW
             elif is_code_matches >= 3 and (
-                is_exclusive >= 1 or has_keywords["revenue"] or has_keywords["profit"]
+                is_exclusive >= 1
+                or is_exclusive_extended >= 1
+                or has_keywords["revenue"]
+                or has_keywords["profit"]
             ):
                 structure_override = TableType.FS_INCOME_STATEMENT
 

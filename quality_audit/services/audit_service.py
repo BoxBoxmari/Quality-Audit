@@ -168,6 +168,7 @@ class AuditService(BaseService):
         results: List[Dict] = []
         flags = get_feature_flags()
         use_cf_cross = flags.get("cashflow_cross_table_context", False)
+        use_big4_engine = flags.get("enable_big4_engine", False)
 
         # Normalize input shape: allow (df, heading) or (df, heading, context)
         normalized_pairs: List[Tuple[pd.DataFrame, Optional[str], Dict]] = []
@@ -182,6 +183,9 @@ class AuditService(BaseService):
             else:
                 continue
             normalized_pairs.append((table, heading, table_context))
+
+        if use_big4_engine:
+            return self._validate_tables_big4(normalized_pairs)
 
         # Pass 1: identify cash flow tables (by classifier) when cross-table context is enabled
         cf_indices: set[int] = set()
@@ -379,6 +383,132 @@ class AuditService(BaseService):
         # Restore original registry after CF validation
         if orig_registry is not None:
             self.context.cash_flow_registry = orig_registry
+
+        return results
+
+    def _validate_tables_big4(
+        self, normalized_pairs: List[Tuple[pd.DataFrame, Optional[str], Dict]]
+    ) -> List[Dict]:
+        """Validate tables using the new Big4 Engine."""
+        from collections import defaultdict
+
+        from ..core.classification.table_classifier_v2 import TableClassifierV2
+        from ..core.evidence.severity import Severity
+        from ..core.materiality.materiality_engine import MaterialityEngine
+        from ..core.model.financial_model import FinancialModel
+        from ..core.rules.rule_registry import RuleRegistry
+        from ..core.scoring.scoring_engine import ScoringEngine
+        from ..core.validators.audit_grade_validator import AuditGradeValidator
+        from ..core.validators.base_validator import ValidationResult
+        from ..utils.column_detector import ColumnDetector
+        from ..utils.table_normalizer import TableNormalizer
+
+        registry = RuleRegistry()
+        materiality = MaterialityEngine()
+        auditor = AuditGradeValidator(registry, materiality)
+        scorer = ScoringEngine()
+        classifier = TableClassifierV2()
+
+        model = FinancialModel()
+        results: List[Dict] = []
+        tables_info = []
+
+        # 1. Classify and build the document-level FinancialModel
+        for idx, (table, heading, table_context) in enumerate(normalized_pairs):
+            self.telemetry.start_table(heading)
+
+            table_type = classifier.classify(table)
+
+            code_col = TableNormalizer._detect_code_column_with_synonyms(table)
+            cur_col, prior_col = ColumnDetector.detect_financial_columns_advanced(table)
+            amount_cols = []
+            if cur_col:
+                amount_cols.append(cur_col)
+            if prior_col:
+                amount_cols.append(prior_col)
+
+            safe_heading = re.sub(r"[^A-Za-z0-9]", "_", heading or "unknown")
+            slug = safe_heading[:50].strip("_")
+            table_id = f"tbl_{idx + 1:03d}_{slug}"
+            table_id = re.sub(r"[^A-Za-z0-9_]", "_", table_id)
+
+            t_info = {
+                "table_id": table_id,
+                "table_type": table_type,
+                "df": table,
+                "code_col": code_col,
+                "amount_cols": amount_cols,
+                "original_index": idx,
+                "heading": heading,
+                "context": table_context or {},
+            }
+            tables_info.append(t_info)
+            model.add_table(t_info)
+
+        # 2. Execute orchestration engine
+        all_evidence = auditor.validate_model(model)
+
+        # 3. Calculate global document score
+        model_score = scorer.evaluate_score(all_evidence)
+        logger.info("[Big4 Engine] Completed with model score %.2f/100", model_score)
+
+        # 4. Map the evidence back to legacy ValidationResult dicts
+        evidence_by_table = defaultdict(list)
+        cross_table_evidence = []
+
+        for ev in all_evidence:
+            if ev.table_id:
+                evidence_by_table[ev.table_id].append(ev)
+            else:
+                cross_table_evidence.append(ev)
+
+        for t_info in tables_info:
+            table_id = t_info["table_id"]
+            idx = t_info["original_index"]
+            my_evidence = evidence_by_table[table_id]
+
+            failed_ev = [e for e in my_evidence if e.is_material]
+            if failed_ev:
+                max_sev = max(failed_ev, key=lambda x: x.severity.value)
+                status_enum = "FAIL"
+                if max_sev.severity == Severity.CRITICAL:
+                    status_enum = "ERROR"
+            else:
+                status_enum = "PASS" if my_evidence else "INFO"
+
+            marks = []
+            for ev in my_evidence:
+                marks.append(
+                    {
+                        "row": ev.source_rows[0] if ev.source_rows else None,
+                        "col": ev.source_cols[0] if ev.source_cols else None,
+                        "diff": ev.diff,
+                        "msg": ev.assertion_text,
+                        "ok": not ev.is_material,
+                        "severity": ev.severity.name,
+                    }
+                )
+
+            res = ValidationResult(
+                status=f"Big4 Validated: {len(my_evidence)} assertions",
+                marks=marks,
+                rule_id=f"BIG4_{t_info['table_type']}",
+                status_enum=status_enum,
+                context={
+                    "validator_type": "Big4Engine",
+                    "table_id": table_id,
+                    "heading": t_info["heading"],
+                    "big4_model_score": model_score,
+                },
+                table_id=table_id,
+            )
+
+            res.context.update(t_info["context"])
+            res_dict = res.to_dict()
+            results.append(res_dict)
+            self.telemetry.end_table(
+                t_info["df"], t_info["heading"], "Big4Engine", res_dict
+            )
 
         return results
 

@@ -1,0 +1,104 @@
+----- CJCGV -----
+File: C:\Users\Admin\Downloads\Quality Audit Tool\data\CJCGV-FS2018-EN- v2 .docx
+ - Financial Statements for the year ended 31 December 2018
+ - ASSETS
+ - SKIPPED_FOOTER_SIGNATURE
+ - Code
+ - SKIPPED_FOOTER_SIGNATURE
+ - Code
+ - Code
+ - SKIPPED_FOOTER_SIGNATURE
+ - Cash and cash equivalents
+ - Accounts receivable from customers detailed by significant customers
+ - Accounts receivable from customers who are related parties
+ - Other receivables
+ - Bad and doubtful debts
+ - Inventories
+ - Short-term prepaid expenses
+ - Long-term prepaid expenses
+ - Tangible fixed assets
+ - Intangible fixed assets
+ - Construction in progress
+ - Deferred tax assets
+ - Accounts payable to suppliers detailed by significant suppliers
+ - Accounts payable to suppliers who are related parties
+ - Taxes payable to State Treasury
+ - Accrued expenses
+ - Other payables
+ - Transfer from long-term borrowings
+ - Annual interest rate
+ - Long-term borrowings
+ - Annual interest rate
+ - Changes in owners’ equity
+ - Authorised and contributed
+ - 
+ - Equivalent VND’000
+ - 
+ - Cost of sales
+ - Financial income
+ - Financial expenses
+ - General and administrative expenses
+ - Other income
+ - Other expenses
+ - Business costs by element
+ - (a)	Recognised in the statement of income
+ - (b)	Reconciliation of effective tax rate
+ - Non-cash investing activity
+ - Transaction value
+ - Balance sheet
+ - SKIPPED_FOOTER_SIGNATURE
+
+
+----- CP Vietnam -----
+File: C:\Users\Admin\Downloads\Quality Audit Tool\data\CP Vietnam-FS2018-Consol-EN.docx
+ - Consolidated Financial Statements for the year ended 31 December 2018
+ - Code
+ - Code
+ - Code
+ - % of equity owned/voting rights
+ - Cash and cash equivalents
+ - (b) 	Equity investments in other entity
+ - 
+ - Accounts receivable from customers detailed by significant customers
+ - Accounts receivable from customers who are related companies
+ - Other short-term receivables
+ - Bad and doubtful debts
+ - 
+ - Inventories
+ - 
+ - Other current assets
+ - Tangible fixed assets
+ - Intangible fixed assets
+ - Construction in progress
+ - 
+ - Short-term prepaid expenses
+ - Long-term prepaid expenses
+ - Other long-term assets
+ - 
+ - Accounts payable to suppliers detailed by significant suppliers
+ - Accounts payable to suppliers who are related companies
+ - Taxes payable to State Treasury
+ - Taxes receivable from State Treasury
+ - Accrued expenses
+ - Other short-term payables
+ - Short-term borrowings
+ - Annual interest rate
+ - Changes in owners’ equity
+ - Number of shares
+ - 
+ - 
+ - Foreign currencies
+ - 
+ - 
+ - Cost of sales
+ - Financial income
+ - Financial expenses
+ - General and administration expenses
+ - Other income
+ - Other expenses
+ - Production and business costs by elements
+ - Recognised in consolidated balance sheet
+ - Recognised in consolidated statement of income
+ - Reconciliation of effective tax rate
+ - Transaction value
+ - Non-cash investing activities

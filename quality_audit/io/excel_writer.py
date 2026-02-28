@@ -406,17 +406,24 @@ class ExcelWriter:
             table = table.map(sanitize_excel_value)
 
             # Create sheet name
+            flags = get_feature_flags()
             note_num = result.get("context", {}).get("note_number")
             raw_name = heading if heading else f"Bảng {i + 1}"
-            if note_num:
+            if note_num and flags.get("ENABLE_NOTE_NUMBER_MAPPING", True):
                 raw_name = f"[Note {note_num}] {raw_name}"
-            sheet_name = self._shorten_sheet_name(raw_name)
+
+            # Excel limits sheet names to 31 characters.
+            # We reserve 4-5 chars for suffixes (e.g. "_999"), so max base length is 26.
+            sheet_name = self._shorten_sheet_name(raw_name, max_length=26)
 
             # Ensure unique sheet name
             original_name = sheet_name
-            counter = 1
+            counter = 2
             while sheet_name in wb.sheetnames:
-                sheet_name = f"{original_name}_{counter}"
+                suffix = f"_{counter}"
+                # Safely truncate original name if suffix makes it > 31
+                cutoff = 31 - len(suffix)
+                sheet_name = f"{original_name[:cutoff]}{suffix}"
                 counter += 1
 
             sheet_names.append(sheet_name)
