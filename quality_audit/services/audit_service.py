@@ -444,6 +444,11 @@ class AuditService(BaseService):
         from ..core.evidence.severity import Severity
         from ..core.materiality.materiality_engine import MaterialityEngine
         from ..core.model.financial_model import FinancialModel
+        from ..core.model.fs_anchor_index import (
+            build_fs_anchor_index,
+            infer_note_ref_for_table,
+            infer_unit_hint_for_table,
+        )
         from ..core.rules.rule_registry import default_registry
         from ..core.scoring.scoring_engine import ScoringEngine
         from ..core.validators.audit_grade_validator import AuditGradeValidator
@@ -527,6 +532,32 @@ class AuditService(BaseService):
             tables_info.append(t_info)
             model.add_table(t_info)
 
+        for t_info in tables_info:
+            t_info.setdefault("context", {})["unit_hint"] = infer_unit_hint_for_table(
+                t_info
+            )
+        model.fs_anchor_index = build_fs_anchor_index(tables_info)
+        for t_info in tables_info:
+            if t_info.get("table_type") in ("GENERIC_NOTE", "TAX_NOTE"):
+                t_info["inferred_note_ref"] = infer_note_ref_for_table(
+                    t_info, model.fs_anchor_index
+                )
+            else:
+                t_info["inferred_note_ref"] = ""
+
+        for t_info in tables_info:
+            if t_info.get("table_type") in ("GENERIC_NOTE", "TAX_NOTE") and t_info.get(
+                "amount_cols"
+            ):
+                df_t = t_info["df"]
+                n = len(df_t)
+                if n >= 2:
+                    t_info["total_row_idx"] = n - 1
+                    t_info["detail_rows"] = list(range(0, n - 1))
+                else:
+                    t_info["total_row_idx"] = None
+                    t_info["detail_rows"] = []
+
         # 2. Execute orchestration engine
         all_evidence = auditor.validate_model(model)
 
@@ -592,8 +623,16 @@ class AuditService(BaseService):
                     status_enum = "INFO_SKIPPED"
                     status_str = "INFO: Bảng không có assertions cụ thể (đã được gộp hoặc không có quy tắc)."
                 elif t_info["table_type"] in note_types:
-                    status_enum = "PASS"
-                    status_str = "PASS: Bảng ghi chú (không áp dụng quy tắc Big4)."
+                    status_enum = "INFO_SKIPPED"
+                    amount_cols = t_info.get("amount_cols") or []
+                    if amount_cols:
+                        status_str = (
+                            "INFO: Bảng ghi chú số - chưa áp dụng quy tắc NOTE_SUM_TO_TOTAL / tie-out."
+                        )
+                    else:
+                        status_str = (
+                            "INFO: Bảng ghi chú (narrative - không kiểm tra số)."
+                        )
                 else:
                     status_enum = "INFO_SKIPPED"
                     status_str = (

@@ -52,6 +52,9 @@ class AuditGradeValidator:
         amount_cols = table_info.get("amount_cols", [])
         table_id = table_info.get("table_id")
 
+        total_row_idx = table_info.get("total_row_idx")
+        detail_rows = table_info.get("detail_rows")
+
         for rule in rules:
             try:
                 rule_evidence = rule.evaluate(
@@ -61,6 +64,8 @@ class AuditGradeValidator:
                     table_id=table_id,
                     code_col=code_col,
                     amount_cols=amount_cols,
+                    total_row_idx=total_row_idx,
+                    detail_rows=detail_rows,
                 )
                 evidence_list.extend(rule_evidence)
             except Exception as e:
@@ -147,6 +152,8 @@ class AuditGradeValidator:
                                     table_id=t.get("table_id"),
                                     code_col=t.get("code_col"),
                                     amount_cols=t.get("amount_cols", []),
+                                    total_row_idx=t.get("total_row_idx"),
+                                    detail_rows=t.get("detail_rows"),
                                 )
                                 all_evidence.extend(rule_evidence)
                             except Exception as e:
