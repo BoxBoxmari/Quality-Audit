@@ -80,21 +80,84 @@ class AuditGradeValidator:
         Returns:
             List of all ValidationEvidence from the entire model.
         """
+        from quality_audit.core.model.statement_model_builder import (
+            StatementModelBuilder,
+        )
+
+        builder = StatementModelBuilder()
         all_evidence = []
 
-        # Validate each table individually
-        for table_info in model.income_statements:
-            all_evidence.extend(self.validate_table(table_info))
+        # Process standard statements
+        for _, statement_tables in [
+            ("FS_INCOME_STATEMENT", model.income_statements),
+            ("FS_BALANCE_SHEET", model.balance_sheets),
+            ("FS_CASH_FLOW", model.cash_flows),
+            ("FS_EQUITY_CHANGES", model.equity_changes),
+        ]:
+            if not statement_tables:
+                continue
 
-        for table_info in model.balance_sheets:
-            all_evidence.extend(self.validate_table(table_info))
+            # Group tables by their specific table_type
+            table_types = list(
+                {t.get("table_type") for t in statement_tables if t.get("table_type")}
+            )
 
-        for table_info in model.cash_flows:
-            all_evidence.extend(self.validate_table(table_info))
+            for t_type in table_types:
+                rules = self.registry.resolve(t_type)
+                if not rules:
+                    continue
 
-        for table_info in model.equity_changes:
-            all_evidence.extend(self.validate_table(table_info))
+                relevant_tables = [
+                    t for t in statement_tables if t.get("table_type") == t_type
+                ]
+                statement_model = builder.build(relevant_tables, t_type)
 
+                for rule in rules:
+                    # If the rule overrides evaluate_model, use it
+                    if (
+                        type(rule).evaluate_model
+                        is not __import__(
+                            "quality_audit.core.rules.base_rule", fromlist=["AuditRule"]
+                        ).AuditRule.evaluate_model
+                    ):
+                        try:
+                            logger.debug(
+                                "Running statement-level rule %s", rule.rule_id
+                            )
+                            rule_evidence = rule.evaluate_model(
+                                model=statement_model, materiality=self.materiality
+                            )
+                            all_evidence.extend(rule_evidence)
+                        except Exception as e:
+                            logger.exception(
+                                "Error executing statement-level rule %s: %s",
+                                rule.rule_id,
+                                e,
+                            )
+                    else:
+                        # Fallback to legacy evaluate with individual table slices
+                        for t in relevant_tables:
+                            if t.get("df") is None:
+                                continue
+                            try:
+                                rule_evidence = rule.evaluate(
+                                    df=t["df"],
+                                    materiality=self.materiality,
+                                    table_type=t.get("table_type"),
+                                    table_id=t.get("table_id"),
+                                    code_col=t.get("code_col"),
+                                    amount_cols=t.get("amount_cols", []),
+                                )
+                                all_evidence.extend(rule_evidence)
+                            except Exception as e:
+                                logger.exception(
+                                    "Error executing legacy rule %s on table %s: %s",
+                                    rule.rule_id,
+                                    t.get("table_id"),
+                                    e,
+                                )
+
+        # Notes are still validated individually since they are distinct
         for table_info in model.notes:
             all_evidence.extend(self.validate_table(table_info))
 

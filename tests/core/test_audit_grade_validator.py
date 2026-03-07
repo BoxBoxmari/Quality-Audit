@@ -81,8 +81,22 @@ def test_audit_grade_validator_model(test_registry, materiality_engine, monkeypa
     monkeypatch.setattr(validator.reconciler, "reconcile", mock_reconcile)
 
     model = FinancialModel()
-    model.income_statements.append({"table_type": "TEST_PASS", "df": pd.DataFrame()})
-    model.balance_sheets.append({"table_type": "TEST_FAIL", "df": pd.DataFrame()})
+    model.income_statements.append(
+        {
+            "table_type": "TEST_PASS",
+            "df": pd.DataFrame({"Code": ["01"], "Amount": [100]}),
+            "code_col": "Code",
+            "amount_cols": ["Amount"],
+        }
+    )
+    model.balance_sheets.append(
+        {
+            "table_type": "TEST_FAIL",
+            "df": pd.DataFrame({"Code": ["01"], "Amount": [100]}),
+            "code_col": "Code",
+            "amount_cols": ["Amount"],
+        }
+    )
 
     all_evidence = validator.validate_model(model)
 

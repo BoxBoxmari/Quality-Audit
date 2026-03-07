@@ -546,7 +546,7 @@ class WordReader:
 
             # 2. Cell Count / Uniqueness Check
             nunique_text_cells = len(
-                set(v for v in non_empty_cells if not v.replace(".", "", 1).isdigit())
+                {v for v in non_empty_cells if not v.replace(".", "", 1).isdigit()}
             )
             if nunique_text_cells < 2:
                 continue
@@ -1497,61 +1497,83 @@ class WordReader:
                 flags = get_feature_flags()
 
                 # Ticket 10: Attach note number to context
-                if flags.get("ENABLE_NOTE_NUMBER_MAPPING", True):
-                    if current_note_number:
-                        table_context["note_number"] = current_note_number
+                if (
+                    flags.get("ENABLE_NOTE_NUMBER_MAPPING", True)
+                    and current_note_number
+                ):
+                    table_context["note_number"] = current_note_number
 
                 is_footer = self._is_footer_or_signature_table(df)
 
                 # Ticket 6: Split Table Guardrails
                 should_merge = False
-                if flags.get("ENABLE_SPLIT_TABLE_MERGE", True):
-                    if (
-                        tables
-                        and not is_footer
-                        and headings[-1] != "SKIPPED_FOOTER_SIGNATURE"
+
+                # Disable merging if this is likely a financial statement (Cash flow, Income Statement)
+                is_financial_statement = False
+                if current_heading:
+                    heading_lower = str(current_heading).lower()
+                    if any(
+                        kw in heading_lower
+                        for kw in [
+                            "kết quả kinh doanh",
+                            "thu nhập",
+                            "lưu chuyển tiền tệ",
+                            "cash flow",
+                            "income statement",
+                            "changes in equity",
+                            "changes in owner",
+                            "biến động vốn chủ sở hữu",
+                            "balance sheet",
+                            "bảng cân đối kế toán",
+                            "tình hình tài chính",
+                            "financial position",
+                        ]
                     ):
-                        prev_df = tables[-1]
-                        # Prioritize merging if a page break occurred since the last table
-                        proximity_pass = (
-                            paragraphs_since_last_table <= 2
-                            and not long_paragraph_since_last_table
-                        ) or getattr(self, "_page_break_since_last_table", False)
+                        is_financial_statement = True
 
-                        if proximity_pass:
-                            # Schema Validation (Pre-concat)
-                            if len(df.columns) == len(prev_df.columns):
-                                # Type Consistency / Header alignment proxy
-                                prev_heading = headings[-1]
-                                if (
-                                    current_heading is None
-                                    or current_heading == prev_heading
-                                    or getattr(
-                                        self, "_page_break_since_last_table", False
-                                    )
-                                ):
-                                    # Row Continuity Sanity (Crucial for CFS)
-                                    # Check if the first column is likely a Code column
-                                    continuity_broken = False
-                                    if len(df) > 0 and len(prev_df) > 0:
-                                        prev_last_val = str(prev_df.iloc[-1, 0]).strip()
-                                        curr_first_val = str(df.iloc[0, 0]).strip()
+                if (
+                    flags.get("ENABLE_SPLIT_TABLE_MERGE", True)
+                    and not is_financial_statement
+                    and tables
+                    and not is_footer
+                    and headings[-1] != "SKIPPED_FOOTER_SIGNATURE"
+                ):
+                    prev_df = tables[-1]
+                    # Prioritize merging if a page break occurred since the last table
+                    proximity_pass = (
+                        paragraphs_since_last_table <= 2
+                        and not long_paragraph_since_last_table
+                    ) or getattr(self, "_page_break_since_last_table", False)
 
-                                        # If the new table resets the code to '01', '1', '1.', abort merge
-                                        if curr_first_val in (
-                                            "01",
-                                            "1",
-                                            "1.",
-                                            "01.",
-                                            "I",
-                                        ):
-                                            # Ensure we're actually looking at numeric/roman codes,
-                                            # and the previous isn't ending with '00' or something that naturally precedes 1
-                                            if prev_last_val not in ("0", "00", "0."):
-                                                continuity_broken = True
+                    if proximity_pass and len(df.columns) == len(prev_df.columns):
+                        # Type Consistency / Header alignment proxy
+                        prev_heading = headings[-1]
+                        if (
+                            current_heading is None
+                            or current_heading == prev_heading
+                            or getattr(self, "_page_break_since_last_table", False)
+                        ):
+                            # Row Continuity Sanity (Crucial for CFS)
+                            # Check if the first column is likely a Code column
+                            continuity_broken = False
+                            if len(df) > 0 and len(prev_df) > 0:
+                                prev_last_val = str(prev_df.iloc[-1, 0]).strip()
+                                curr_first_val = str(df.iloc[0, 0]).strip()
 
-                                    if not continuity_broken:
-                                        should_merge = True
+                                # If the new table resets the code to '01', '1', '1.', abort merge
+                                # Ensure we're actually looking at numeric/roman codes,
+                                # and the previous isn't ending with '00' or something that naturally precedes 1
+                                if curr_first_val in (
+                                    "01",
+                                    "1",
+                                    "1.",
+                                    "01.",
+                                    "I",
+                                ) and prev_last_val not in ("0", "00", "0."):
+                                    continuity_broken = True
+
+                            if not continuity_broken:
+                                should_merge = True
 
                 if should_merge:
                     # Merge into previous table
@@ -1648,10 +1670,8 @@ class WordReader:
                             text,
                             flags=re.IGNORECASE,
                         )
-                        if note_match:
-                            # Confidence gate: heading style or strong signal (bold)
-                            if "Heading" in style_name or is_bold:
-                                current_note_number = note_match.group(3)
+                        if note_match and ("Heading" in style_name or is_bold):
+                            current_note_number = note_match.group(3)
                     else:
                         # Legacy note matching
                         note_match = re.search(
@@ -1659,9 +1679,8 @@ class WordReader:
                             text,
                             flags=re.IGNORECASE,
                         )
-                        if note_match:
-                            if "Heading" in style_name or is_bold:
-                                current_note_number = note_match.group(3)
+                        if note_match and ("Heading" in style_name or is_bold):
+                            current_note_number = note_match.group(3)
 
                     prior_paragraphs.append((text, style_name, is_bold, is_upper))
                     # Keep buffer finite

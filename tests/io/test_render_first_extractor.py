@@ -358,7 +358,9 @@ class TestRenderFirstExtractorE2E:
         not __import__(
             "quality_audit.io.extractors.conversion",
             fromlist=["WordComConverter"],
-        ).WordComConverter().is_available(),
+        )
+        .WordComConverter()
+        .is_available(),
         reason="Word COM converter not available",
     )
     def test_render_first_integration_word_com_mode_reported(

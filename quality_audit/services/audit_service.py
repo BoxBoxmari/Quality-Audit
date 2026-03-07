@@ -444,14 +444,14 @@ class AuditService(BaseService):
         from ..core.evidence.severity import Severity
         from ..core.materiality.materiality_engine import MaterialityEngine
         from ..core.model.financial_model import FinancialModel
-        from ..core.rules.rule_registry import RuleRegistry
+        from ..core.rules.rule_registry import default_registry
         from ..core.scoring.scoring_engine import ScoringEngine
         from ..core.validators.audit_grade_validator import AuditGradeValidator
         from ..core.validators.base_validator import ValidationResult
         from ..utils.column_detector import ColumnDetector
         from ..utils.table_normalizer import TableNormalizer
 
-        registry = RuleRegistry()
+        registry = default_registry
         materiality = MaterialityEngine()
         auditor = AuditGradeValidator(registry, materiality)
         scorer = ScoringEngine()
@@ -462,10 +462,22 @@ class AuditService(BaseService):
         tables_info = []
 
         # 1. Classify and build the document-level FinancialModel
-        for idx, (table, heading, table_context) in enumerate(normalized_pairs):
-            self.telemetry.start_table(heading)
+        import time as _time
 
-            table_type = classifier.classify(table)
+        for idx, (table, heading, table_context) in enumerate(normalized_pairs):
+            _t_start = _time.time()  # record per-table start before classification
+
+            # Extract heading safely from table metadata if not provided by tuple
+            table_heading = heading
+            if not table_heading:
+                table_heading = getattr(table, "heading", "")
+
+            classification = classifier.classify(table=table, heading=table_heading)
+            table_type_str = (
+                classification.table_type.value.upper()
+                if hasattr(classification, "table_type")
+                else str(classification).upper()
+            )
 
             code_col = TableNormalizer._detect_code_column_with_synonyms(table)
             cur_col, prior_col = ColumnDetector.detect_financial_columns_advanced(table)
@@ -476,13 +488,14 @@ class AuditService(BaseService):
                 amount_cols.append(prior_col)
 
             safe_heading = re.sub(r"[^A-Za-z0-9]", "_", heading or "unknown")
-            slug = safe_heading[:50].strip("_")
+            slug = safe_heading[:50].strip("_") or "unnamed"
             table_id = f"tbl_{idx + 1:03d}_{slug}"
             table_id = re.sub(r"[^A-Za-z0-9_]", "_", table_id)
 
             t_info = {
                 "table_id": table_id,
-                "table_type": table_type,
+                "table_type": table_type_str,
+                "classification": classification,
                 "df": table,
                 "code_col": code_col,
                 "amount_cols": amount_cols,
@@ -490,6 +503,27 @@ class AuditService(BaseService):
                 "heading": heading,
                 "context": table_context or {},
             }
+            t_info["context"].update(
+                {
+                    "table_index": idx,
+                    "table_type": table_type_str,
+                    "heading": heading,
+                    "total_row_metadata": (table_context or {}).get(
+                        "total_row_metadata"
+                    )
+                    or {},
+                }
+            )
+            logger.info(
+                "[Big4] Classified tbl_%03d heading=%r → type=%s conf=%.2f code_col=%s amount_cols=%s",
+                idx + 1,
+                heading,
+                table_type_str,
+                getattr(classification, "confidence", 0.0),
+                code_col,
+                amount_cols,
+            )
+            t_info["_telemetry_start"] = _t_start  # stash for loop 2
             tables_info.append(t_info)
             model.add_table(t_info)
 
@@ -505,7 +539,15 @@ class AuditService(BaseService):
         cross_table_evidence = []
 
         for ev in all_evidence:
-            if ev.table_id:
+            if "source_locations" in ev.metadata and ev.metadata["source_locations"]:
+                involved_tables = {
+                    loc["table_id"]
+                    for loc in ev.metadata["source_locations"]
+                    if "table_id" in loc
+                }
+                for t_id in involved_tables:
+                    evidence_by_table[t_id].append(ev)
+            elif ev.table_id:
                 evidence_by_table[ev.table_id].append(ev)
             else:
                 cross_table_evidence.append(ev)
@@ -521,24 +563,109 @@ class AuditService(BaseService):
                 status_enum = "FAIL"
                 if max_sev.severity == Severity.CRITICAL:
                     status_enum = "ERROR"
+
+                issues = []
+                for e in failed_ev:
+                    calc = getattr(e, "actual", 0) or 0
+                    repo = getattr(e, "expected", 0) or 0
+                    diff = getattr(e, "diff", 0) or 0
+                    issue_str = (
+                        f"{e.assertion_text} - Tính={calc:,.0f}, Thực tế={repo:,.0f}, Lệch={diff:,.0f}"
+                        if (calc or repo or diff)
+                        else e.assertion_text
+                    )
+                    issues.append(issue_str)
+
+                preview = "; ".join(issues[:10])
+                more = f" ... (+{len(issues) - 10} vấn đề)" if len(issues) > 10 else ""
+                status_str = f"{status_enum}: Big4 Engine - {len(failed_ev)} sai lệch. {preview}{more}"
+            elif not my_evidence:
+                # Chỉ đánh dấu "không có assertions" cho bảng FS có quy tắc Big4
+                fs_types = (
+                    "FS_BALANCE_SHEET",
+                    "FS_INCOME_STATEMENT",
+                    "FS_CASH_FLOW",
+                    "FS_EQUITY",
+                )
+                note_types = ("GENERIC_NOTE", "TAX_NOTE")
+                if t_info["table_type"] in fs_types:
+                    status_enum = "INFO_SKIPPED"
+                    status_str = "INFO: Bảng không có assertions cụ thể (đã được gộp hoặc không có quy tắc)."
+                elif t_info["table_type"] in note_types:
+                    status_enum = "PASS"
+                    status_str = "PASS: Bảng ghi chú (không áp dụng quy tắc Big4)."
+                else:
+                    status_enum = "INFO_SKIPPED"
+                    status_str = (
+                        "INFO: Bảng chưa phân loại hoặc không có assertions cụ thể."
+                    )
             else:
-                status_enum = "PASS" if my_evidence else "INFO"
+                status_enum = "PASS"
+                status_str = f"PASS: Big4 Engine - kiểm tra {len(my_evidence)} assertions KHỚP (0 sai lệch)"
+
+            import contextlib
 
             marks = []
             for ev in my_evidence:
-                marks.append(
-                    {
-                        "row": ev.source_rows[0] if ev.source_rows else None,
-                        "col": ev.source_cols[0] if ev.source_cols else None,
-                        "diff": ev.diff,
-                        "msg": ev.assertion_text,
-                        "ok": not ev.is_material,
-                        "severity": ev.severity.name,
+                col_name = ev.source_cols[0] if ev.source_cols else None
+                col_idx = None
+                if col_name is not None:
+                    with contextlib.suppress(ValueError):
+                        col_idx = list(t_info["df"].columns).index(col_name)
+
+                if (
+                    "source_locations" in ev.metadata
+                    and ev.metadata["source_locations"]
+                ):
+                    ev_rows = {
+                        loc["row_idx"]
+                        for loc in ev.metadata["source_locations"]
+                        if loc.get("table_id") == table_id
                     }
-                )
+                else:
+                    # Collect all rows involved in this evidence (components + target)
+                    ev_rows = getattr(ev, "source_rows", []) or []
+
+                if not ev_rows:
+                    # Fallback if no source_rows specified
+                    marks.append(
+                        {
+                            "row": None,
+                            "col": col_idx,
+                            "diff": ev.diff,
+                            "msg": ev.assertion_text,
+                            "ok": not ev.is_material,
+                            "severity": ev.severity.name,
+                        }
+                    )
+                else:
+                    for r in ev_rows:
+                        marks.append(
+                            {
+                                "row": r,
+                                "col": col_idx,
+                                "diff": ev.diff,
+                                "msg": ev.assertion_text,
+                                "ok": not ev.is_material,
+                                "severity": ev.severity.name,
+                            }
+                        )
+
+            # Extract classifier metadata from the classification result
+            classification = t_info.get("classification")
+            classifier_type = t_info["table_type"]  # already .upper()'\'d
+            classifier_conf = getattr(classification, "confidence", None)
+            classifier_reason = getattr(classification, "reason", None)
+
+            # Extract heading metadata from table_context
+            orig_ctx = t_info.get("context") or {}
+            heading_source = orig_ctx.get("heading_source")
+            heading_confidence = orig_ctx.get("heading_confidence")
+
+            assertions_count = len(my_evidence)
 
             res = ValidationResult(
-                status=f"Big4 Validated: {len(my_evidence)} assertions",
+                status=status_str,
                 marks=marks,
                 rule_id=f"BIG4_{t_info['table_type']}",
                 status_enum=status_enum,
@@ -547,13 +674,39 @@ class AuditService(BaseService):
                     "table_id": table_id,
                     "heading": t_info["heading"],
                     "big4_model_score": model_score,
+                    # Telemetry fields — read by TelemetryCollector.end_table()
+                    "classifier_primary_type": classifier_type,
+                    "classifier_confidence": classifier_conf,
+                    "classifier_reason": classifier_reason,
+                    "heading_source": heading_source,
+                    "heading_confidence": heading_confidence,
+                    "assertions_count": assertions_count,
                 },
                 table_id=table_id,
             )
 
-            res.context.update(t_info["context"])
+            res.context.update(orig_ctx)
+            # Re-apply Big4-specific keys so orig_ctx.update() doesn't clobber them
+            res.context["classifier_primary_type"] = classifier_type
+            res.context["classifier_confidence"] = classifier_conf
+            res.context["classifier_reason"] = classifier_reason
+            res.context["heading_source"] = heading_source
+            res.context["heading_confidence"] = heading_confidence
+            res.context["assertions_count"] = assertions_count
+
             res_dict = res.to_dict()
+            # assertions_count must be top-level for TelemetryCollector.end_table()
+            res_dict["assertions_count"] = assertions_count
             results.append(res_dict)
+
+            # FIX: restore per-table start time so end_table() doesn't skip tables.
+            # The start/end loop is split (classify in loop-1, result-map in loop-2),
+            # so _current_table_start=None after the first end_table call silently
+            # drops all subsequent tables from telemetry (Table Count stays at 1).
+            self.telemetry._current_table_start = t_info.get("_telemetry_start")
+            self.telemetry._current_table_index = len(
+                self.telemetry.run_telemetry.tables
+            )
             self.telemetry.end_table(
                 t_info["df"], t_info["heading"], "Big4Engine", res_dict
             )
@@ -931,6 +1084,9 @@ class AuditService(BaseService):
                 "results": [],
             }
         except Exception as e:
+            import traceback
+
+            traceback.print_exc()
             return {
                 "success": False,
                 "error": f"Unexpected error: {str(e)}",

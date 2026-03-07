@@ -76,9 +76,9 @@ class QualityAuditGUI(tk.Tk):
         # Tax rate data model
         self.tax_rates: dict[str, float] = {}  # key = file path, value = rate
         self.default_tax_rate: float = 25.0  # from bulk_rate_var
-        self.tax_rate_errors: dict[str, str] = (
-            {}
-        )  # key = file path, value = error message
+        self.tax_rate_errors: dict[
+            str, str
+        ] = {}  # key = file path, value = error message
         self.tax_edit_entry: ttk.Entry | None = None  # current editing entry overlay
         self.tax_edit_item: str | None = None  # current editing item ID
 
@@ -447,7 +447,9 @@ class QualityAuditGUI(tk.Tk):
         f = ttk.Frame(top, padding=PADDING_SECTION)
         f.pack(fill="both", expand=True)
         ttk.Label(
-            f, text="Quick start", font=FONTS["heading_bold"]  # type: ignore[arg-type]
+            f,
+            text="Quick start",
+            font=FONTS["heading_bold"],  # type: ignore[arg-type]
         ).pack(anchor="w")
         ttk.Label(f, text="1. Chọn thư mục Input và Output phía trên.").pack(
             anchor="w", pady=(8, 0)

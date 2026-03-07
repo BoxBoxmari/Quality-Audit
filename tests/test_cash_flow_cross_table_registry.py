@@ -61,6 +61,7 @@ class TestCashFlowCrossTableRegistry:
         def _flags_with_cf_enabled():
             flags = _global_get_flags().copy()
             flags["cashflow_cross_table_context"] = True
+            flags["enable_big4_engine"] = False
             return flags
 
         # Enable cross-table context in both AuditService and CashFlowValidator modules

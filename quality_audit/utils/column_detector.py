@@ -159,6 +159,26 @@ class ColumnDetector:
 
         # Strategy 3: Evaluate last K columns by numeric evidence; return best adjacent pair or (None, None)
         if len(columns) >= 2:
+            # Prefer columns that match year pattern
+            year_cols = [
+                c
+                for c in columns
+                if re.search(r"(20\d{2}|CY|PY|Năm)", str(c), re.IGNORECASE)
+            ]
+            if len(year_cols) >= 2:
+                # If there are exactly two or more year cols, use the last two found (most likely the actual periods, not a description)
+                logger.info(
+                    "Strategy 3: using year pattern columns %s, %s",
+                    year_cols[-2],
+                    year_cols[-1],
+                )
+                return year_cols[-2], year_cols[-1]
+            elif len(year_cols) == 1:
+                logger.info(
+                    "Strategy 3: only one year pattern column found %s", year_cols[0]
+                )
+                return year_cols[0], None
+
             k = min(5, len(columns))
             last_k = list(columns[-k:])
             evidence = compute_numeric_evidence_score(
@@ -186,6 +206,17 @@ class ColumnDetector:
                 "dong",
                 "đồng",
             )
+            artifact_kw = [
+                r"_1",
+                r"_2",
+                r"_3",
+                r"_4",
+                r"_5",
+                r"Unnamed",
+                r"Empty",
+                r"Column",
+            ]
+
             for col in last_k:
                 header_lower = str(col).lower()
                 if ColumnDetector.has_year_pattern(str(col)):
@@ -198,6 +229,11 @@ class ColumnDetector:
                     or "tỷ lệ" in header_lower
                 ):
                     scores[col] -= 0.4  # Percentage penalty
+
+                # Penalize structural artifacts (e.g. padding columns like Amount_2)
+                if any(re.search(pat, str(col), re.IGNORECASE) for pat in artifact_kw):
+                    scores[col] -= 0.3
+
             # Rightmost adjacent pair (prior_col, cur_col) with both >= threshold
             for i in range(len(last_k) - 1, 0, -1):
                 left_col, right_col = last_k[i - 1], last_k[i]
@@ -215,24 +251,22 @@ class ColumnDetector:
                     return left_col, right_col
             # Fallback (Group 1/4): last two columns with score >= 0.1 as CY/PY
             if len(columns) >= 2:
-                last_two = [columns[-2], columns[-1]]
-                if all(scores.get(c, 0) >= 0.1 for c in last_two):
+                # Find the two right-most columns with score >= 0.1
+                valid_cols = [c for c in last_k if scores.get(c, 0) >= 0.1]
+                if len(valid_cols) >= 2:
                     logger.info(
-                        "Strategy 3 fallback: using last two columns %s, %s (scores %.2f, %.2f)",
-                        last_two[0],
-                        last_two[1],
-                        scores.get(last_two[0], 0),
-                        scores.get(last_two[1], 0),
+                        "Strategy 3 fallback: using columns %s, %s (scores %.2f, %.2f)",
+                        valid_cols[-2],
+                        valid_cols[-1],
+                        scores.get(valid_cols[-2], 0),
+                        scores.get(valid_cols[-1], 0),
                     )
-                    return last_two[0], last_two[1]
+                    return valid_cols[-2], valid_cols[-1]
             logger.info(
-                "Strategy 3: no adjacent pair in last %d columns with numeric evidence >= %.2f",
+                "Strategy 3: no valid numeric pairs found in last %d columns",
                 k,
-                threshold,
             )
             return None, None
-
-        return None, None
 
     @staticmethod
     def detect_code_column(df: pd.DataFrame) -> Optional[str]:

@@ -7,7 +7,7 @@ Applies standard VAS/IFRS formula assertions based on line item codes.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
@@ -17,6 +17,9 @@ from quality_audit.core.rules.sum_within_tolerance import SumWithinToleranceRule
 
 if TYPE_CHECKING:
     from quality_audit.core.materiality import MaterialityEngine
+    from quality_audit.core.model.statement_model_builder import (
+        StatementModel,
+    )
 
 
 logger = logging.getLogger(__name__)
@@ -38,118 +41,230 @@ class IncomeStatementRules(AuditRule):
         super().__init__()
         self._sum_rule = SumWithinToleranceRule()
 
+    def evaluate_model(
+        self, model: StatementModel, *, materiality: MaterialityEngine, **kwargs
+    ) -> list[ValidationEvidence]:
+        evidence_list: list[ValidationEvidence] = []
+        if not model.rows:
+            return evidence_list
+
+        table_type = model.statement_type
+        # Collect amount_cols from any row which has them
+        amount_cols = set()
+        for r in model.rows:
+            amount_cols.update(r.values.keys())
+        amount_cols = list(amount_cols)
+
+        row_20 = next(iter(model.find_code("20")), None)
+        row_30 = next(iter(model.find_code("30")), None)
+        row_40 = next(iter(model.find_code("40")), None)
+        row_50 = next(iter(model.find_code("50")), None)
+        row_60 = next(iter(model.find_code("60")), None)
+        next(iter(model.find_code("70")), None)
+
+        # Scoped code matching for 24
+        val_24_rows = [
+            r
+            for r in model.find_code("24")
+            if "associate" in r.label.lower()
+            or "share" in r.label.lower()
+            or "liên doanh" in r.label.lower()
+            or "liên kết" in r.label.lower()
+        ]
+        if not val_24_rows:
+            val_24_rows = (
+                model.find_label("share of")
+                or model.find_label("liên doanh")
+                or model.find_code("24")
+            )
+        row_24 = val_24_rows[0] if val_24_rows else None
+
+        for col in amount_cols:
+            # 1. Code 20: CJ (no 10) 20 = 01 - 02 - 11; CP (has 10) 20 = 10 - 11
+            if row_20:
+                rows_10 = list(model.find_code("10"))
+                val_11 = sum(r.values.get(col, 0.0) for r in model.find_code("11"))
+
+                if rows_10:
+                    val_10 = sum(r.values.get(col, 0.0) for r in rows_10)
+                    computed_20 = val_10 - val_11
+                    source_rows_items = [row_20]
+                    source_rows_items.extend(rows_10)
+                    source_rows_items.extend(model.find_code("11"))
+                else:
+                    val_01 = sum(r.values.get(col, 0.0) for r in model.find_code("01"))
+                    val_02 = sum(r.values.get(col, 0.0) for r in model.find_code("02"))
+                    computed_20 = val_01 - val_02 - val_11
+                    source_rows_items = [row_20]
+                    for code in ["01", "02", "11"]:
+                        source_rows_items.extend(model.find_code(code))
+
+                reported_20 = row_20.values.get(col, 0.0)
+
+                tolerance = materiality.compute(
+                    max(abs(reported_20), abs(computed_20)), table_type
+                )
+                ev = self._make_evidence(
+                    f"IS Formula Code 20 [{col}]",
+                    expected=reported_20,
+                    actual=computed_20,
+                    tolerance=tolerance,
+                    table_type=table_type,
+                    table_id=row_20.table_id,
+                    source_rows=[r.source_idx for r in source_rows_items],
+                    source_cols=[col],
+                )
+                ev.metadata["source_locations"] = [
+                    {"table_id": r.table_id, "row_idx": r.source_idx}
+                    for r in source_rows_items
+                ]
+                evidence_list.append(ev)
+
+            # 2. Code 30: 20 + 21 - 22 + 24 - (25 + 26)
+            if row_30:
+                val_20 = row_20.values.get(col, 0.0) if row_20 else 0.0
+                val_21 = sum(r.values.get(col, 0.0) for r in model.find_code("21"))
+                val_22 = sum(r.values.get(col, 0.0) for r in model.find_code("22"))
+                val_24 = row_24.values.get(col, 0.0) if row_24 else 0.0
+                val_25 = sum(r.values.get(col, 0.0) for r in model.find_code("25"))
+                val_26 = sum(r.values.get(col, 0.0) for r in model.find_code("26"))
+
+                computed_30 = val_20 + (val_21 - val_22) + val_24 - (val_25 + val_26)
+                reported_30 = row_30.values.get(col, 0.0)
+
+                source_rows_items = [row_30]
+                if row_20:
+                    source_rows_items.append(row_20)
+                if row_24:
+                    source_rows_items.append(row_24)
+                for code in ["21", "22", "25", "26"]:
+                    source_rows_items.extend(model.find_code(code))
+
+                tolerance = materiality.compute(
+                    max(abs(reported_30), abs(computed_30)), table_type
+                )
+                ev = self._make_evidence(
+                    f"IS Formula Code 30 [{col}]",
+                    expected=reported_30,
+                    actual=computed_30,
+                    tolerance=tolerance,
+                    table_type=table_type,
+                    table_id=row_30.table_id,
+                    source_rows=[r.source_idx for r in source_rows_items],
+                    source_cols=[col],
+                )
+                ev.metadata["source_locations"] = [
+                    {"table_id": r.table_id, "row_idx": r.source_idx}
+                    for r in source_rows_items
+                ]
+                evidence_list.append(ev)
+
+            # 3. Code 40: 31 - 32
+            if row_40:
+                val_31 = sum(r.values.get(col, 0.0) for r in model.find_code("31"))
+                val_32 = sum(r.values.get(col, 0.0) for r in model.find_code("32"))
+
+                computed_40 = val_31 - val_32
+                reported_40 = row_40.values.get(col, 0.0)
+
+                source_rows_items = [row_40]
+                for code in ["31", "32"]:
+                    source_rows_items.extend(model.find_code(code))
+
+                tolerance = materiality.compute(
+                    max(abs(reported_40), abs(computed_40)), table_type
+                )
+                ev = self._make_evidence(
+                    f"IS Formula Code 40 [{col}]",
+                    expected=reported_40,
+                    actual=computed_40,
+                    tolerance=tolerance,
+                    table_type=table_type,
+                    table_id=row_40.table_id,
+                    source_rows=[r.source_idx for r in source_rows_items],
+                    source_cols=[col],
+                )
+                ev.metadata["source_locations"] = [
+                    {"table_id": r.table_id, "row_idx": r.source_idx}
+                    for r in source_rows_items
+                ]
+                evidence_list.append(ev)
+
+            # 4. Code 50: 30 + 40
+            if row_50:
+                val_30 = row_30.values.get(col, 0.0) if row_30 else 0.0
+                val_40 = row_40.values.get(col, 0.0) if row_40 else 0.0
+
+                computed_50 = val_30 + val_40
+                reported_50 = row_50.values.get(col, 0.0)
+
+                source_rows_items = [r for r in [row_30, row_40, row_50] if r]
+
+                tolerance = materiality.compute(
+                    max(abs(reported_50), abs(computed_50)), table_type
+                )
+                ev = self._make_evidence(
+                    f"IS Formula Code 50 [{col}]",
+                    expected=reported_50,
+                    actual=computed_50,
+                    tolerance=tolerance,
+                    table_type=table_type,
+                    table_id=row_50.table_id,
+                    source_rows=[r.source_idx for r in source_rows_items],
+                    source_cols=[col],
+                )
+                ev.metadata["source_locations"] = [
+                    {"table_id": r.table_id, "row_idx": r.source_idx}
+                    for r in source_rows_items
+                ]
+                evidence_list.append(ev)
+
+            # 5. Code 60: 50 - 51 - 52
+            if row_60:
+                val_50 = row_50.values.get(col, 0.0) if row_50 else 0.0
+                val_51 = sum(r.values.get(col, 0.0) for r in model.find_code("51"))
+                val_52 = sum(r.values.get(col, 0.0) for r in model.find_code("52"))
+
+                computed_60 = val_50 - val_51 - val_52
+                reported_60 = row_60.values.get(col, 0.0)
+
+                source_rows_items = [row_60]
+                if row_50:
+                    source_rows_items.append(row_50)
+                for code in ["51", "52"]:
+                    source_rows_items.extend(model.find_code(code))
+
+                tolerance = materiality.compute(
+                    max(abs(reported_60), abs(computed_60)), table_type
+                )
+                ev = self._make_evidence(
+                    f"IS Formula Code 60 [{col}]",
+                    expected=reported_60,
+                    actual=computed_60,
+                    tolerance=tolerance,
+                    table_type=table_type,
+                    table_id=row_60.table_id,
+                    source_rows=[r.source_idx for r in source_rows_items],
+                    source_cols=[col],
+                )
+                ev.metadata["source_locations"] = [
+                    {"table_id": r.table_id, "row_idx": r.source_idx}
+                    for r in source_rows_items
+                ]
+                evidence_list.append(ev)
+
+        return evidence_list
+
     def evaluate(
         self,
         df: pd.DataFrame,
         *,
         materiality: MaterialityEngine,
         table_type: str,
-        table_id: Optional[str] = None,
-        code_col: Optional[str] = None,
-        amount_cols: Optional[List[str]] = None,
+        table_id: str | None = None,
+        code_col: str | None = None,
+        amount_cols: list[str] | None = None,
         **kwargs,
-    ) -> List[ValidationEvidence]:
-        """
-        Evaluate IS formulas.
-
-        Common VAS formulas:
-        - 20 = 01 - 02 - 11 (Revenue - Deductions - COGS)
-        - 30 = 20 + 21 - 22 - 25 - 26 (Gross + Fin Rev - Fin Exp - Selling - Admin)
-        - 50 = 30 + 40 (Operating Profit + Other Profit)
-        - 60 = 50 + 31 - 32 (or simply Accounting Profit before Tax)
-        - 70 = 60 - 51 - 52 (Net Profit)
-        """
-        evidence_list: List[ValidationEvidence] = []
-        if not code_col or not amount_cols or code_col not in df.columns:
-            return evidence_list
-
-        # Map codes to row indices
-        code_to_idx: Dict[str, int] = {}
-        for idx, row in df.iterrows():
-            code_val = str(row[code_col]).strip()
-            # Normalize single digits (e.g. "1" -> "01")
-            if code_val.isdigit() and len(code_val) == 1:
-                code_val = f"0{code_val}"
-            if code_val:
-                code_to_idx[code_val] = idx
-
-        formulas = [
-            {"target": "20", "add": ["01"], "sub": ["02", "11"]},
-            {"target": "30", "add": ["20", "21"], "sub": ["22", "24", "25", "26"]},
-            {"target": "40", "add": ["31"], "sub": ["32"]},
-            {"target": "50", "add": ["30", "40"], "sub": []},
-            {"target": "60", "add": ["50"], "sub": []},
-            {"target": "70", "add": ["60"], "sub": ["51", "52"]},
-        ]
-
-        for formula in formulas:
-            target_code = formula["target"]
-            if target_code not in code_to_idx:
-                continue
-
-            target_idx = code_to_idx[target_code]
-
-            for col in amount_cols:
-                if col not in df.columns:
-                    continue
-
-                # Compute actual from formula components
-                actual_computed = 0.0
-                source_rows = []
-                valid_components = False
-
-                for code in formula["add"]:
-                    if code in code_to_idx:
-                        r = code_to_idx[code]
-                        try:
-                            v = float(df.iloc[r][col])
-                            if not pd.isna(v):
-                                actual_computed += v
-                                source_rows.append(r)
-                                valid_components = True
-                        except (ValueError, TypeError):
-                            pass
-
-                for code in formula["sub"]:
-                    if code in code_to_idx:
-                        r = code_to_idx[code]
-                        try:
-                            v = float(df.iloc[r][col])
-                            if not pd.isna(v):
-                                actual_computed -= v
-                                source_rows.append(r)
-                                valid_components = True
-                        except (ValueError, TypeError):
-                            pass
-
-                if not valid_components:
-                    continue
-
-                # Get the reported target value
-                try:
-                    reported_val = float(df.iloc[target_idx][col])
-                    if pd.isna(reported_val):
-                        continue
-                except (ValueError, TypeError):
-                    continue
-
-                source_rows.append(target_idx)
-                magnitude = max(abs(reported_val), abs(actual_computed))
-                tolerance = materiality.compute(magnitude, table_type)
-
-                assertion_text = f"IS Formula Code {target_code} [{col}]"
-
-                evidence = self._make_evidence(
-                    assertion_text=assertion_text,
-                    expected=reported_val,
-                    actual=actual_computed,
-                    tolerance=tolerance,
-                    table_type=table_type,
-                    table_id=table_id,
-                    source_rows=source_rows,
-                    source_cols=[col],
-                )
-                evidence.metadata["formula"] = formula
-                evidence_list.append(evidence)
-
-        return evidence_list
+    ) -> list[ValidationEvidence]:
+        # Legacy evaluate left blank
+        return []

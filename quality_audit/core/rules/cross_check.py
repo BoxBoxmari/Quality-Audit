@@ -8,7 +8,7 @@ a reference value from another statement, within tolerance.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
@@ -37,12 +37,12 @@ class CrossCheckRule(AuditRule):
         *,
         materiality: MaterialityEngine,
         table_type: str,
-        table_id: Optional[str] = None,
-        code_col: Optional[str] = None,
-        amount_cols: Optional[List[str]] = None,
-        verify_items: Optional[List[Dict]] = None,
+        table_id: str | None = None,
+        code_col: str | None = None,
+        amount_cols: list[str] | None = None,
+        verify_items: list[dict] | None = None,
         **kwargs,
-    ) -> List[ValidationEvidence]:
+    ) -> list[ValidationEvidence]:
         """
         Evaluate cross-check matches.
 
@@ -57,7 +57,7 @@ class CrossCheckRule(AuditRule):
                     }
                 ]
         """
-        evidence_list: List[ValidationEvidence] = []
+        evidence_list: list[ValidationEvidence] = []
 
         if not verify_items:
             logger.debug("CrossCheckRule: no items to verify")

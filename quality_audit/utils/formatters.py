@@ -91,10 +91,12 @@ def apply_cell_marks(
             try:
                 # Merge with existing comment if present
                 if cell.comment:
-                    new_text = cell.comment.text + "\n" + str(mark["comment"])
+                    old_text = str(cell.comment.text) if cell.comment.text else ""
+                    new_text = (old_text + "\n" + str(mark["comment"])).strip()
+                    cell.comment = Comment(text=new_text, author="AutoCheck")
                 else:
                     new_text = str(mark["comment"])
-                cell.comment = Comment(text=new_text, author="AutoCheck")
+                    cell.comment = Comment(text=new_text, author="AutoCheck")
             except Exception:
                 # Skip comment if it fails
                 pass
@@ -132,10 +134,11 @@ def apply_crossref_marks(
             # Add error comment
             try:
                 if cell.comment:
-                    new_text = cell.comment.text + "\n" + str(mark["comment"])
+                    old_text = str(cell.comment.text) if cell.comment.text else ""
+                    new_text = (old_text + "\n" + str(mark["comment"])).strip()
+                    cell.comment = Comment(text=new_text, author="AutoCheck")
                 else:
-                    new_text = str(mark["comment"])
-                cell.comment = Comment(text=new_text, author="AutoCheck")
+                    cell.comment = Comment(str(mark["comment"]), "Quality Audit")
             except Exception:
                 pass
 

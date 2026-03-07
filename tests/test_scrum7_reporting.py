@@ -91,6 +91,41 @@ def test_executive_summary_creation(mock_results):
     assert ws.cell(row=11, column=4).value == 1000000  # Diff
 
 
+def test_executive_summary_counts_normalized_status_values():
+    writer = ExcelWriter()
+    wb = Workbook()
+    results = [
+        ValidationResult(
+            status="PASS: lowercase status_enum",
+            status_enum="pass ",
+            rule_id="MATH_EQ",
+            table_id="tbl_norm_001",
+            context={"heading": "Normalized PASS"},
+        ).to_dict(),
+        ValidationResult(
+            status="FAIL: lowercase status_enum",
+            status_enum=" fail",
+            rule_id="MATH_EQ",
+            table_id="tbl_norm_002",
+            context={"heading": "Normalized FAIL"},
+        ).to_dict(),
+        ValidationResult(
+            status="WARN: lowercase status_enum",
+            status_enum="warn",
+            rule_id="MATH_EQ",
+            table_id="tbl_norm_003",
+            context={"heading": "Normalized WARN"},
+        ).to_dict(),
+    ]
+
+    writer.write_executive_summary(wb, results)
+    ws = wb["Executive Summary"]
+
+    assert ws["D5"].value == 1
+    assert ws["F5"].value == 1
+    assert ws["H5"].value == 1
+
+
 def test_focus_list_creation(mock_results):
     writer = ExcelWriter()
     wb = Workbook()

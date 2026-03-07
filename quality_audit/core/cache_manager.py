@@ -4,6 +4,7 @@ LRU Cache Manager for cross-checking data with memory bounds and performance mon
 
 import threading
 import time
+import warnings
 from collections import OrderedDict
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -295,9 +296,6 @@ class AuditContext:
         self._cash_flow_registry_var.set(None)
         self._last_normalization_metadata_var.set(None)
         self._last_total_row_metadata_var.set(None)
-
-
-import warnings
 
 
 class DeprecatedLRUCacheManager(LRUCacheManager):

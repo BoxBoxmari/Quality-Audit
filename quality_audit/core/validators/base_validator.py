@@ -4,7 +4,6 @@ Base validator class for financial statement validation.
 
 import logging
 from abc import ABC, abstractmethod
-
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd

@@ -12,8 +12,6 @@ Design principles:
 
 from __future__ import annotations
 
-from typing import Dict, Optional
-
 
 class MaterialityEngine:
     """Compute dynamic tolerance based on value magnitude and table type.
@@ -35,7 +33,7 @@ class MaterialityEngine:
     CEILING_ABS: float = 1_000_000.0
 
     # Per-table-type relative thresholds (fraction of |value|)
-    DEFAULT_PROFILE: Dict[str, float] = {
+    DEFAULT_PROFILE: dict[str, float] = {
         "BALANCE_SHEET": 0.001,  # 0.1%  — tightest
         "INCOME_STATEMENT": 0.005,  # 0.5%
         "CASH_FLOW": 0.005,  # 0.5%
@@ -52,9 +50,9 @@ class MaterialityEngine:
     def __init__(
         self,
         *,
-        floor_abs: Optional[float] = None,
-        ceiling_abs: Optional[float] = None,
-        profile: Optional[Dict[str, float]] = None,
+        floor_abs: float | None = None,
+        ceiling_abs: float | None = None,
+        profile: dict[str, float] | None = None,
     ) -> None:
         """Initialize with optional overrides.
 

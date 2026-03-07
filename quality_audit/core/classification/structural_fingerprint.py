@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Dict, FrozenSet, List, Optional, Set
 
 import pandas as pd
 
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Balance Sheet: codes 100, 110, 120, ..., 270 (Assets), 300, 310, ..., 440 (L+E)
-_BS_CODES: FrozenSet[str] = frozenset(
+_BS_CODES: frozenset[str] = frozenset(
     {
         "100",
         "110",
@@ -61,7 +60,7 @@ _BS_CODES: FrozenSet[str] = frozenset(
 )
 
 # Income Statement: codes 01–62
-_IS_CODES: FrozenSet[str] = frozenset(
+_IS_CODES: frozenset[str] = frozenset(
     {
         "01",
         "02",
@@ -88,7 +87,7 @@ _IS_CODES: FrozenSet[str] = frozenset(
 )
 
 # Cash Flow: codes 01–70 (operating/investing/financing/net)
-_CF_CODES: FrozenSet[str] = frozenset(
+_CF_CODES: frozenset[str] = frozenset(
     {
         "01",
         "02",
@@ -131,10 +130,32 @@ _CF_CODES: FrozenSet[str] = frozenset(
 )
 
 # Codes exclusive to IS (not shared with CF)
-_IS_EXCLUSIVE: FrozenSet[str] = frozenset({"23", "25", "26", "51", "52", "61", "62"})
+_IS_EXCLUSIVE: frozenset[str] = frozenset({"51", "52", "62", "71"})
 
 # Codes exclusive to CF (not shared with IS)
-_CF_EXCLUSIVE: FrozenSet[str] = frozenset({"08", "09", "13", "14", "15", "16", "17"})
+_CF_EXCLUSIVE: frozenset[str] = frozenset(
+    {
+        "03",
+        "04",
+        "05",
+        "06",
+        "07",
+        "08",
+        "09",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "27",
+        "33",
+        "34",
+        "35",
+        "36",
+    }
+)
 
 # Movement table patterns
 _OPENING_PATTERNS = re.compile(
@@ -153,7 +174,7 @@ _MOVEMENT_PATTERNS = re.compile(
 # Keyword maps for content scanning
 # ---------------------------------------------------------------------------
 
-_KEYWORD_MAP: Dict[str, List[str]] = {
+_KEYWORD_MAP: dict[str, list[str]] = {
     "assets": ["assets", "tài sản"],
     "liabilities": ["liabilities", "nợ phải trả"],
     "equity": ["equity", "vốn chủ sở hữu"],
@@ -187,9 +208,9 @@ class StructuralFingerprint:
         total_rows: Total rows in table.
     """
 
-    found_codes: Set[str] = field(default_factory=set)
+    found_codes: set[str] = field(default_factory=set)
     code_density: float = 0.0
-    keywords_found: Set[str] = field(default_factory=set)
+    keywords_found: set[str] = field(default_factory=set)
     bs_code_matches: int = 0
     is_code_matches: int = 0
     cf_code_matches: int = 0

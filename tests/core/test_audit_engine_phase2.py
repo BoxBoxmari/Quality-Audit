@@ -15,7 +15,6 @@ from quality_audit.core.classification import (
 )
 from quality_audit.core.routing.table_type_classifier import TableType
 
-
 # ---------------------------------------------------------------------------
 # Helper: build a minimal DataFrame from row dicts
 # ---------------------------------------------------------------------------
@@ -60,12 +59,13 @@ class TestStructuralFingerprinter:
             {"Code": "11", "Item": "Cost of sales", "Amount": 3000},
             {"Code": "20", "Item": "Gross profit", "Amount": 2000},
             {"Code": "25", "Item": "Admin expenses", "Amount": 500},
+            {"Code": "51", "Item": "Other income", "Amount": 100},
             {"Code": "50", "Item": "Net profit", "Amount": 1500},
         ]
         fp = StructuralFingerprinter()
         result = fp.extract(_make_table(rows))
         assert result.is_code_matches >= 4
-        assert result.is_exclusive_matches >= 1  # code 25
+        assert result.is_exclusive_matches >= 1  # code 51 in _IS_EXCLUSIVE
 
     def test_cash_flow_codes(self):
         rows = [

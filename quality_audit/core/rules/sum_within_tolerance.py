@@ -8,7 +8,7 @@ within the dynamically calculated materiality tolerance.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
@@ -37,13 +37,13 @@ class SumWithinToleranceRule(AuditRule):
         *,
         materiality: MaterialityEngine,
         table_type: str,
-        table_id: Optional[str] = None,
-        code_col: Optional[str] = None,
-        amount_cols: Optional[List[str]] = None,
-        total_row_idx: Optional[int] = None,
-        detail_rows: Optional[List[int]] = None,
+        table_id: str | None = None,
+        code_col: str | None = None,
+        amount_cols: list[str] | None = None,
+        total_row_idx: int | None = None,
+        detail_rows: list[int] | None = None,
         **kwargs,
-    ) -> List[ValidationEvidence]:
+    ) -> list[ValidationEvidence]:
         """
         Evaluate the sum of details against the total row.
 
@@ -52,8 +52,8 @@ class SumWithinToleranceRule(AuditRule):
             detail_rows: List of row indices to sum. If None, sums everything
                          above total_row_idx.
         """
-        evidence_list: List[ValidationEvidence] = []
-        flags = get_feature_flags()
+        evidence_list: list[ValidationEvidence] = []
+        get_feature_flags()
 
         if total_row_idx is None or total_row_idx < 0 or total_row_idx >= len(df):
             logger.debug("SumWithinToleranceRule: invalid or missing total_row_idx")
@@ -77,11 +77,12 @@ class SumWithinToleranceRule(AuditRule):
 
             # 1. Extract total value
             total_val_raw = df.iloc[total_row_idx][col]
-            try:
-                total_val = float(total_val_raw)
-                if pd.isna(total_val):
-                    continue
-            except (ValueError, TypeError):
+            import re
+
+            if not re.search(r"\d", str(total_val_raw)):
+                continue
+            total_val = self._parse_float(total_val_raw)
+            if pd.isna(total_val):
                 continue
 
             # 2. Extract and sum details
@@ -89,13 +90,10 @@ class SumWithinToleranceRule(AuditRule):
             valid_details = []
             for r in detail_rows:
                 v_raw = df.iloc[r][col]
-                try:
-                    v = float(v_raw)
-                    if not pd.isna(v):
-                        actual_sum += v
-                        valid_details.append(r)
-                except (ValueError, TypeError):
-                    continue
+                v = self._parse_float(v_raw)
+                if not pd.isna(v):
+                    actual_sum += v
+                    valid_details.append(r)
 
             # Skip trivial columns (e.g. all empty)
             if not valid_details and total_val == 0.0:

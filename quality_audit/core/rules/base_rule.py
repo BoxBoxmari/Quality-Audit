@@ -9,7 +9,9 @@ Rules produce ValidationEvidence objects and never return bare strings.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any
+
+import pandas as pd
 
 from ..evidence import Severity, ValidationEvidence
 
@@ -17,6 +19,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from ..materiality import MaterialityEngine
+    from ..model.statement_model_builder import StatementModel
 
 
 class AuditRule(ABC):
@@ -36,7 +39,7 @@ class AuditRule(ABC):
     rule_id: str = "UNSET"
     description: str = ""
     severity_default: Severity = Severity.MAJOR
-    table_types: List[str] = []
+    table_types: list[str] = []
 
     @abstractmethod
     def evaluate(
@@ -45,25 +48,53 @@ class AuditRule(ABC):
         *,
         materiality: MaterialityEngine,
         table_type: str,
-        table_id: Optional[str] = None,
-        code_col: Optional[str] = None,
-        amount_cols: Optional[List[str]] = None,
-    ) -> List[ValidationEvidence]:
-        """Run assertions against the table and return evidence.
-
-        Args:
-            df: Table DataFrame (already header-promoted, normalized).
-            materiality: MaterialityEngine instance for tolerance computation.
-            table_type: Classified table type string.
-            table_id: Optional identifier for this table.
-            code_col: Name of the code column (if detected).
-            amount_cols: Names of numeric amount columns.
-
-        Returns:
-            List of ValidationEvidence objects (one per assertion).
-            Empty list means all assertions passed or were not applicable.
-        """
+        table_id: str | None = None,
+        code_col: str | None = None,
+        amount_cols: list[str] | None = None,
+    ) -> list[ValidationEvidence]:
+        """Run assertions against the table and return evidence."""
         ...
+
+    def evaluate_model(
+        self, model: StatementModel, *, materiality: MaterialityEngine, **kwargs
+    ) -> list[ValidationEvidence]:
+        """Run assertions against a full StatementModel and return evidence.
+
+        Subclasses that operate on multi-table statements (like Cash Flow)
+        should override this method.
+        """
+        raise NotImplementedError(
+            "This rule does not support statement-level evaluation."
+        )
+
+    def _parse_float(self, val: Any) -> float:
+        """Robustly convert a cell value (string, int, float) to float."""
+        if pd.isna(val) or val is None:
+            return 0.0
+        if isinstance(val, (int, float)):
+            return float(val)
+
+        s = str(val).strip()
+        if not s:
+            return 0.0
+
+        # Handle parentheses for negatives (e.g. "(1,234)" -> "-1,234")
+        is_negative = False
+        if s.startswith("(") and s.endswith(")"):
+            is_negative = True
+            s = s[1:-1].strip()
+        elif s.startswith("-"):
+            is_negative = True
+            s = s[1:].strip()
+
+        # Remove thousands separators (commas or spaces)
+        s = s.replace(",", "").replace(" ", "")
+
+        try:
+            res = float(s)
+            return -res if is_negative else res
+        except ValueError:
+            return 0.0
 
     def _make_evidence(
         self,
@@ -73,10 +104,10 @@ class AuditRule(ABC):
         tolerance: float,
         *,
         table_type: str,
-        table_id: Optional[str] = None,
-        source_rows: Optional[List[int]] = None,
-        source_cols: Optional[List[str]] = None,
-        severity_override: Optional[Severity] = None,
+        table_id: str | None = None,
+        source_rows: list[int] | None = None,
+        source_cols: list[str] | None = None,
+        severity_override: Severity | None = None,
         confidence: float = 1.0,
     ) -> ValidationEvidence:
         """Helper to build a ValidationEvidence from assertion inputs.

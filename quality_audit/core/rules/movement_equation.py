@@ -8,7 +8,7 @@ respecting dynamic tolerances from the MaterialityEngine.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
@@ -38,14 +38,14 @@ class MovementEquationRule(AuditRule):
         *,
         materiality: MaterialityEngine,
         table_type: str,
-        table_id: Optional[str] = None,
-        code_col: Optional[str] = None,
-        amount_cols: Optional[List[str]] = None,
-        ob_row_idx: Optional[int] = None,
-        cb_row_idx: Optional[int] = None,
-        movement_rows: Optional[List[int]] = None,
+        table_id: str | None = None,
+        code_col: str | None = None,
+        amount_cols: list[str] | None = None,
+        ob_row_idx: int | None = None,
+        cb_row_idx: int | None = None,
+        movement_rows: list[int] | None = None,
         **kwargs,
-    ) -> List[ValidationEvidence]:
+    ) -> list[ValidationEvidence]:
         """
         Evaluate OB + Movements == CB.
 
@@ -54,7 +54,7 @@ class MovementEquationRule(AuditRule):
             cb_row_idx: Closing balance row index.
             movement_rows: List of movement row indices.
         """
-        evidence_list: List[ValidationEvidence] = []
+        evidence_list: list[ValidationEvidence] = []
 
         if ob_row_idx is None or cb_row_idx is None or movement_rows is None:
             logger.debug("MovementEquationRule: missing structure parameters")
@@ -73,15 +73,13 @@ class MovementEquationRule(AuditRule):
                 continue
 
             # 1. OB
-            try:
-                ob_val = float(df.iloc[ob_row_idx][col])
-            except (ValueError, TypeError):
+            ob_val = self._parse_float(df.iloc[ob_row_idx][col])
+            if pd.isna(ob_val):
                 continue
 
             # 2. CB
-            try:
-                cb_val = float(df.iloc[cb_row_idx][col])
-            except (ValueError, TypeError):
+            cb_val = self._parse_float(df.iloc[cb_row_idx][col])
+            if pd.isna(cb_val):
                 continue
 
             # 3. Movements
@@ -90,13 +88,10 @@ class MovementEquationRule(AuditRule):
             for r in movement_rows:
                 if r > max_idx:
                     continue
-                try:
-                    v = float(df.iloc[r][col])
-                    if not pd.isna(v):
-                        movement_sum += v
-                        valid_moves.append(r)
-                except (ValueError, TypeError):
-                    continue
+                v = self._parse_float(df.iloc[r][col])
+                if not pd.isna(v):
+                    movement_sum += v
+                    valid_moves.append(r)
 
             # Expected = OB + movements
             expected_cb = ob_val + movement_sum

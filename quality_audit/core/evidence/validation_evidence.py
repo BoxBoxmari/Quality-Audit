@@ -9,7 +9,7 @@ difference is material, and full provenance metadata.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .severity import Severity
 
@@ -44,13 +44,13 @@ class ValidationEvidence:
     is_material: bool
     severity: Severity
     confidence: float = 1.0
-    source_rows: List[int] = field(default_factory=list)
-    source_cols: List[str] = field(default_factory=list)
-    table_type: Optional[str] = None
-    table_id: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    source_rows: list[int] = field(default_factory=list)
+    source_cols: list[str] = field(default_factory=list)
+    table_type: str | None = None
+    table_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary for reporting and telemetry."""
         return {
             "rule_id": self.rule_id,
@@ -79,10 +79,10 @@ class ValidationEvidence:
         tolerance: float,
         *,
         confidence: float = 1.0,
-        source_rows: Optional[List[int]] = None,
-        source_cols: Optional[List[str]] = None,
-        table_type: Optional[str] = None,
-        table_id: Optional[str] = None,
+        source_rows: list[int] | None = None,
+        source_cols: list[str] | None = None,
+        table_type: str | None = None,
+        table_id: str | None = None,
     ) -> ValidationEvidence:
         """Factory for a passing assertion (diff within tolerance)."""
         diff = actual - expected
@@ -113,11 +113,11 @@ class ValidationEvidence:
         severity: Severity,
         *,
         confidence: float = 1.0,
-        source_rows: Optional[List[int]] = None,
-        source_cols: Optional[List[str]] = None,
-        table_type: Optional[str] = None,
-        table_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        source_rows: list[int] | None = None,
+        source_cols: list[str] | None = None,
+        table_type: str | None = None,
+        table_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ValidationEvidence:
         """Factory for a failing assertion (diff exceeds tolerance)."""
         diff = actual - expected

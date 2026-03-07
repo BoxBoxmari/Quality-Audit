@@ -10,12 +10,11 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 
-from ...config.feature_flags import get_feature_flags
 from ..routing.table_type_classifier import ClassificationResult, TableType
 from .structural_fingerprint import StructuralFingerprint, StructuralFingerprinter
 
@@ -25,13 +24,21 @@ logger = logging.getLogger(__name__)
 # Heading keyword sets
 # ---------------------------------------------------------------------------
 
-_HEADING_PATTERNS: Dict[TableType, List[str]] = {
+_HEADING_PATTERNS: dict[TableType, list[str]] = {
     TableType.FS_BALANCE_SHEET: [
         "balance sheet",
         "cân đối kế toán",
         "statement of financial position",
         "báo cáo tình hình tài chính",
         "financial position",
+        # VAS headings extracted from table first row
+        "assets",
+        "tài sản",
+        "liabilities and equity",
+        "nguồn vốn",
+        "resources",
+        "total assets",
+        "tổng tài sản",
     ],
     TableType.FS_INCOME_STATEMENT: [
         "statement of income",
@@ -41,6 +48,11 @@ _HEADING_PATTERNS: Dict[TableType, List[str]] = {
         "p&l",
         "statement of comprehensive income",
         "báo cáo kết quả hoạt động kinh doanh",
+        # VAS headings from first row
+        "revenue",
+        "doanh thu",
+        "gross profit",
+        "lợi nhuận gộp",
     ],
     TableType.FS_CASH_FLOW: [
         "cash flow",
@@ -48,9 +60,20 @@ _HEADING_PATTERNS: Dict[TableType, List[str]] = {
         "lưu chuyển tiền tệ",
         "lưu chuyển tiền",
         "statement of cash flows",
+        # VAS headings from first row
+        "net cash",
+        "tiền thuần",
+        "operating activities",
+        "hoạt động kinh doanh",
     ],
     TableType.FS_EQUITY: [
         "changes in equity",
+        "changes in owner",
+        "changes in owners",
+        "changes in owners' equity",
+        "changes in owner's equity",
+        "changes in owners’ equity",
+        "changes in owner’s equity",
         "biến động vốn chủ sở hữu",
         "statement of changes in equity",
         "báo cáo biến động vốn chủ sở hữu",
@@ -114,15 +137,15 @@ class TableClassifierV2:
     def __init__(
         self,
         *,
-        fingerprinter: Optional[StructuralFingerprinter] = None,
+        fingerprinter: StructuralFingerprinter | None = None,
     ) -> None:
         self._fp = fingerprinter or StructuralFingerprinter()
 
     def classify(
         self,
         table: pd.DataFrame,
-        heading: Optional[str],
-        heading_confidence: Optional[float] = None,
+        heading: str | None,
+        heading_confidence: float | None = None,
     ) -> ClassificationResult:
         """Classify a table using multi-signal voting.
 
@@ -162,7 +185,7 @@ class TableClassifierV2:
         fingerprint = self._fp.extract(table)
 
         # Collect signals
-        signals: List[_Signal] = []
+        signals: list[_Signal] = []
 
         # --- Heading signals ---
         heading_weight = self.HEADING_WEIGHT
@@ -201,7 +224,7 @@ class TableClassifierV2:
             confidence = 0.5
             reasons = ["No signals matched — fallback"]
         else:
-            vote_totals: Dict[TableType, float] = {}
+            vote_totals: dict[TableType, float] = {}
             for sig in signals:
                 vote_totals[sig.table_type] = (
                     vote_totals.get(sig.table_type, 0.0) + sig.score
@@ -215,13 +238,12 @@ class TableClassifierV2:
             table_type = winner
 
             # Tax note requires content evidence
-            if table_type == TableType.TAX_NOTE:
-                if _EXCLUSIVE_OF_VAT_RE.search(heading_lower):
-                    table_type = TableType.GENERIC_NOTE
-                    confidence = 0.8
-                    signals.append(
-                        _Signal(TableType.GENERIC_NOTE, 0.8, "vat_exclusion")
-                    )
+            if table_type == TableType.TAX_NOTE and _EXCLUSIVE_OF_VAT_RE.search(
+                heading_lower
+            ):
+                table_type = TableType.GENERIC_NOTE
+                confidence = 0.8
+                signals.append(_Signal(TableType.GENERIC_NOTE, 0.8, "vat_exclusion"))
 
             reasons = [
                 f"{s.source}: {s.table_type.value} (score={s.score:.2f})"
@@ -241,7 +263,7 @@ class TableClassifierV2:
                 confidence = 0.75
                 reasons.append("Negative keyword override → GENERIC_NOTE")
 
-        ctx: Dict[str, Any] = {
+        ctx: dict[str, Any] = {
             "scan_rows": fingerprint.scan_rows,
             "classifier_version": "v2",
             "classifier_primary_type": table_type.value,
@@ -265,9 +287,9 @@ class TableClassifierV2:
     # Internal scoring methods
     # -----------------------------------------------------------------
 
-    def _score_heading(self, heading_lower: str) -> Optional[_Signal]:
+    def _score_heading(self, heading_lower: str) -> _Signal | None:
         """Score heading match against known patterns."""
-        best: Optional[_Signal] = None
+        best: _Signal | None = None
 
         for table_type, patterns in _HEADING_PATTERNS.items():
             for pattern in patterns:
@@ -279,9 +301,9 @@ class TableClassifierV2:
 
         return best
 
-    def _score_structure(self, fp: StructuralFingerprint) -> List[_Signal]:
+    def _score_structure(self, fp: StructuralFingerprint) -> list[_Signal]:
         """Score structural fingerprint evidence per table type."""
-        signals: List[_Signal] = []
+        signals: list[_Signal] = []
 
         # Balance Sheet
         if fp.bs_code_matches >= self.MIN_CODE_MATCHES_BS:
@@ -303,6 +325,8 @@ class TableClassifierV2:
             or "profit" in fp.keywords_found
         ):
             score = min(1.0, 0.3 + fp.is_code_matches * 0.08)
+            if fp.cf_exclusive_matches >= 1:
+                score *= 0.5  # Penalize if strong CF signals exist
             signals.append(_Signal(TableType.FS_INCOME_STATEMENT, score, "structure"))
 
         # Cash Flow: need CF codes + cash/flows keywords or CF exclusives
@@ -312,6 +336,8 @@ class TableClassifierV2:
             or ("operating" in fp.keywords_found and "investing" in fp.keywords_found)
         ):
             score = min(1.0, 0.3 + fp.cf_code_matches * 0.06)
+            if fp.is_exclusive_matches >= 1:
+                score *= 0.5  # Penalize if strong IS signals exist
             signals.append(_Signal(TableType.FS_CASH_FLOW, score, "structure"))
 
         # Equity: heading-only (rare structural signals)

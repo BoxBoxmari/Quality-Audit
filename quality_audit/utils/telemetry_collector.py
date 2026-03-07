@@ -428,7 +428,7 @@ class TelemetryCollector:
         """Count tables by status enum."""
         counts: Dict[str, int] = {}
         for table in self.run_telemetry.tables:
-            status = table.status_enum
+            status = str(table.status_enum or "").strip().upper() or "UNKNOWN"
             counts[status] = counts.get(status, 0) + 1
         return counts
 

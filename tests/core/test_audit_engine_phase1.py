@@ -13,7 +13,6 @@ from quality_audit.core.materiality import MaterialityEngine
 from quality_audit.core.rules.base_rule import AuditRule
 from quality_audit.core.rules.rule_registry import RuleRegistry
 
-
 # ---------------------------------------------------------------------------
 # Severity
 # ---------------------------------------------------------------------------

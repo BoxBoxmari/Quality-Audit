@@ -24,7 +24,20 @@ class TestAuditServiceObservabilityAndSkippedTables:
         assert result.rule_id == "SKIPPED_FOOTER_SIGNATURE"
         assert "footer/signature" in result.context.get("reason", "")
 
-    def test_validate_tables_enriches_context_and_logs(self):
+    def test_validate_tables_enriches_context_and_logs(self, monkeypatch):
+        def _get_service_flags():
+            from quality_audit.config.feature_flags import (
+                get_feature_flags as _global_get_flags,
+            )
+
+            flags = _global_get_flags().copy()
+            flags["enable_big4_engine"] = False
+            return flags
+
+        monkeypatch.setattr(
+            "quality_audit.services.audit_service.get_feature_flags",
+            _get_service_flags,
+        )
         service = self._make_service()
 
         df = pd.DataFrame(

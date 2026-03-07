@@ -91,7 +91,9 @@ class TestQualityAuditGolden:
                 "INFO",
                 "FAIL",
                 "WARN",
-            ), f"CJ tbl_{tbl_num:03d} expected FAIL_TOOL_EXTRACT or INFO_SKIPPED, got {status_enum}"
+            ), (
+                f"CJ tbl_{tbl_num:03d} expected FAIL_TOOL_EXTRACT or INFO_SKIPPED, got {status_enum}"
+            )
 
     def test_cp_vietnam_tbl_004_not_pass_when_no_numeric_evidence(
         self, audit_service, test_data_dir, tmp_path

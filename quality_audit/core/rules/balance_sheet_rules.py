@@ -8,7 +8,7 @@ based on line item codes.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
@@ -38,11 +38,11 @@ class BalanceSheetRules(AuditRule):
         *,
         materiality: MaterialityEngine,
         table_type: str,
-        table_id: Optional[str] = None,
-        code_col: Optional[str] = None,
-        amount_cols: Optional[List[str]] = None,
+        table_id: str | None = None,
+        code_col: str | None = None,
+        amount_cols: list[str] | None = None,
         **kwargs,
-    ) -> List[ValidationEvidence]:
+    ) -> list[ValidationEvidence]:
         """
         Evaluate BS formulas.
 
@@ -51,15 +51,23 @@ class BalanceSheetRules(AuditRule):
         - 440 = 300 + 400 (Total Resources = Liabilities + Equity)
         - 270 = 440 (Assets = Resources)
         """
-        evidence_list: List[ValidationEvidence] = []
+        evidence_list: list[ValidationEvidence] = []
         if not code_col or not amount_cols or code_col not in df.columns:
             return evidence_list
 
-        code_to_idx: Dict[str, int] = {}
+        code_to_idx: dict[str, int] = {}
         for idx, row in df.iterrows():
             code_val = str(row[code_col]).strip()
             if code_val:
                 code_to_idx[code_val] = idx
+
+        logger.info(
+            "[BS Rules] table_id=%s code_col=%r amount_cols=%s code_to_idx ALL keys=%s",
+            table_id,
+            code_col,
+            amount_cols,
+            list(code_to_idx.keys()),
+        )
 
         formulas = [
             {"target": "270", "add": ["100", "200"], "sub": []},
@@ -84,23 +92,17 @@ class BalanceSheetRules(AuditRule):
                 for code in formula["add"]:
                     if code in code_to_idx:
                         r = code_to_idx[code]
-                        try:
-                            v = float(df.iloc[r][col])
-                            if not pd.isna(v):
-                                actual_computed += v
-                                source_rows.append(r)
-                                valid_components = True
-                        except (ValueError, TypeError):
-                            pass
+                        v = self._parse_float(df.iloc[r][col])
+                        if not pd.isna(v):
+                            actual_computed += v
+                            source_rows.append(r)
+                            valid_components = True
 
                 if not valid_components:
                     continue
 
-                try:
-                    reported_val = float(df.iloc[target_idx][col])
-                    if pd.isna(reported_val):
-                        continue
-                except (ValueError, TypeError):
+                reported_val = self._parse_float(df.iloc[target_idx][col])
+                if pd.isna(reported_val):
                     continue
 
                 source_rows.append(target_idx)

@@ -44,15 +44,15 @@ class TestGenericBlockSumExcludesAllCodeColumns:
 
         # No issue or mark should contain "Tổng chi tiết = 26" or "27" or "31" (code-column sums)
         all_text = " ".join(str(m.get("comment", "")) for m in result.marks)
-        assert (
-            "Tổng chi tiết = 26" not in all_text
-        ), "Block sum must not include Code column in Tổng chi tiết"
-        assert (
-            "Tổng chi tiết = 27" not in all_text
-        ), "Block sum must not include Code.1 in Tổng chi tiết"
-        assert (
-            "Tổng chi tiết = 31" not in all_text
-        ), "Block sum must not include Code.2 in Tổng chi tiết"
+        assert "Tổng chi tiết = 26" not in all_text, (
+            "Block sum must not include Code column in Tổng chi tiết"
+        )
+        assert "Tổng chi tiết = 27" not in all_text, (
+            "Block sum must not include Code.1 in Tổng chi tiết"
+        )
+        assert "Tổng chi tiết = 31" not in all_text, (
+            "Block sum must not include Code.2 in Tổng chi tiết"
+        )
 
 
 class TestMultiCodeRegressionTotals:
@@ -70,12 +70,12 @@ class TestMultiCodeRegressionTotals:
             str(m.get("comment", "")) for m in result.marks if m.get("comment")
         ]
         for issue in issue_comments:
-            assert (
-                "Tổng trên bảng = 8" not in issue or "Tổng chi tiết = 8" in issue
-            ), "If total on table is 8, detail sum must be 8 (amounts only), not 26/27/31"
+            assert "Tổng trên bảng = 8" not in issue or "Tổng chi tiết = 8" in issue, (
+                "If total on table is 8, detail sum must be 8 (amounts only), not 26/27/31"
+            )
         for m in result.marks:
             comment = str(m.get("comment", ""))
             if "Tổng trên bảng = 8" in comment:
-                assert (
-                    "Tổng chi tiết = 8" in comment
-                ), "When total on table is 8, detail sum in comment must be 8 (amount cols only)"
+                assert "Tổng chi tiết = 8" in comment, (
+                    "When total on table is 8, detail sum in comment must be 8 (amount cols only)"
+                )
