@@ -52,16 +52,15 @@ def test_fallback_converter_mode_selection(
     FallbackConverter should prefer WordComConverter when available, otherwise soffice,
     and report 'unavailable' when no backend is available.
     """
-    from quality_audit.io.extractors.conversion import converter
-    from quality_audit.io.extractors.conversion import FallbackConverter
+    from quality_audit.io.extractors.conversion import FallbackConverter, converter
 
-    DummyWordCom, DummyLocalSoffice = make_dummy_converters(
+    dummy_word_com, dummy_local_soffice = make_dummy_converters(
         word_available, soffice_available
     )
 
     # Patch the converter classes used inside FallbackConverter
-    monkeypatch.setattr(converter, "WordComConverter", DummyWordCom)
-    monkeypatch.setattr(converter, "LocalSofficeConverter", DummyLocalSoffice)
+    monkeypatch.setattr(converter, "WordComConverter", dummy_word_com)
+    monkeypatch.setattr(converter, "LocalSofficeConverter", dummy_local_soffice)
 
     conv = FallbackConverter()
 
@@ -94,8 +93,7 @@ def test_fallback_converter_mode_selection(
 
 def test_fallback_converter_falls_back_to_soffice_when_word_fails(monkeypatch):
     """When Word COM fails, FallbackConverter should still try local soffice."""
-    from quality_audit.io.extractors.conversion import converter
-    from quality_audit.io.extractors.conversion import FallbackConverter
+    from quality_audit.io.extractors.conversion import FallbackConverter, converter
 
     class FailingWordCom:
         def __init__(self):
@@ -145,8 +143,7 @@ def test_word_com_is_available_depends_on_windows_and_powershell(
     monkeypatch, os_name, which_result, expected_available
 ):
     """WordComConverter.is_available should depend on OS type and PowerShell presence."""
-    from quality_audit.io.extractors.conversion import WordComConverter
-    from quality_audit.io.extractors.conversion import converter
+    from quality_audit.io.extractors.conversion import WordComConverter, converter
 
     # Patch OS name and shutil.which inside the converter module
     monkeypatch.setattr(converter.os, "name", os_name, raising=False)

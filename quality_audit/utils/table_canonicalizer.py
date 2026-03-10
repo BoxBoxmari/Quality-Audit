@@ -215,8 +215,9 @@ def _merge_code_columns(df: pd.DataFrame, report: CanonReport) -> pd.DataFrame:
             merged = out[target].copy()
             for idx in out.index:
                 a, b = out.loc[idx, target], out.loc[idx, c]
-                sa, sb = str(a).strip() if pd.notna(a) else "", (
-                    str(b).strip() if pd.notna(b) else ""
+                sa, sb = (
+                    str(a).strip() if pd.notna(a) else "",
+                    (str(b).strip() if pd.notna(b) else ""),
                 )
                 if sa and sb and sa != sb:
                     report.conflicts.append(

@@ -77,7 +77,10 @@ def apply_cell_marks(
         start_col: Column offset for positioning
     """
     for mark in marks:
-        r, c = _dfpos_to_excel(mark["row"], mark["col"])
+        row_idx, col_idx = mark.get("row"), mark.get("col")
+        if row_idx is None or col_idx is None:
+            continue
+        r, c = _dfpos_to_excel(row_idx, col_idx)
         cell = ws.cell(row=r + start_row, column=c + start_col)
 
         if mark.get("ok") is True:
@@ -91,10 +94,12 @@ def apply_cell_marks(
             try:
                 # Merge with existing comment if present
                 if cell.comment:
-                    new_text = cell.comment.text + "\n" + str(mark["comment"])
+                    old_text = str(cell.comment.text) if cell.comment.text else ""
+                    new_text = (old_text + "\n" + str(mark["comment"])).strip()
+                    cell.comment = Comment(text=new_text, author="AutoCheck")
                 else:
                     new_text = str(mark["comment"])
-                cell.comment = Comment(text=new_text, author="AutoCheck")
+                    cell.comment = Comment(text=new_text, author="AutoCheck")
             except Exception:
                 # Skip comment if it fails
                 pass
@@ -132,10 +137,11 @@ def apply_crossref_marks(
             # Add error comment
             try:
                 if cell.comment:
-                    new_text = cell.comment.text + "\n" + str(mark["comment"])
+                    old_text = str(cell.comment.text) if cell.comment.text else ""
+                    new_text = (old_text + "\n" + str(mark["comment"])).strip()
+                    cell.comment = Comment(text=new_text, author="AutoCheck")
                 else:
-                    new_text = str(mark["comment"])
-                cell.comment = Comment(text=new_text, author="AutoCheck")
+                    cell.comment = Comment(str(mark["comment"]), "Quality Audit")
             except Exception:
                 pass
 

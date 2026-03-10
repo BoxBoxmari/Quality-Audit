@@ -112,12 +112,21 @@ TABLES_NEED_CHECK_SEPARATELY = {
 # Tables without total rows
 TABLES_WITHOUT_TOTAL = {
     "business costs by element",
-    "Production and business costs by elements",
+    "production and business costs by elements",
     "non-cash investing activity",
     "non-cash investing activities",
     "significant transactions with related parties",
     "significant transactions with related companies",
     "corresponding figures",
+    # Patch A: listing/metadata tables without total rows
+    "transaction value",
+    "annual interest rate",
+    "equivalent vnd'000",
+    "number of shares",
+    "transfer from long-term borrowings",
+    "recognised in consolidated balance sheet",
+    "recognised in consolidated statement of income",
+    "recognised in consolidated income statement",
 }
 
 # Related party table patterns
@@ -140,20 +149,53 @@ RIGHT_ALIGN = Alignment(horizontal="right")  # Right align
 
 
 # WARN Taxonomy & Traceability (Phase 1): StatusCategory for output contract
-# Maps to: PASS, FAIL_DATA, FAIL_TOOL_EXTRACT, FAIL_TOOL_LOGIC, INFO_SKIPPED
+# Maps to: PASS, FAIL_DATA, FAIL_TOOL_EXTRACT, FAIL_TOOL_LOGIC, INFO_SKIPPED, WARN
 # FailureReasonCode: use rule_id from RULE_TAXONOMY or context.failure_reason_code
 STATUS_CATEGORY_PASS = "PASS"
 STATUS_CATEGORY_FAIL_DATA = "FAIL_DATA"
 STATUS_CATEGORY_FAIL_TOOL_EXTRACT = "FAIL_TOOL_EXTRACT"
 STATUS_CATEGORY_FAIL_TOOL_LOGIC = "FAIL_TOOL_LOGIC"
 STATUS_CATEGORY_INFO_SKIPPED = "INFO_SKIPPED"
+STATUS_CATEGORY_WARN = "WARN"
 STATUS_CATEGORY_VALUES = (
     STATUS_CATEGORY_PASS,
     STATUS_CATEGORY_FAIL_DATA,
     STATUS_CATEGORY_FAIL_TOOL_EXTRACT,
     STATUS_CATEGORY_FAIL_TOOL_LOGIC,
     STATUS_CATEGORY_INFO_SKIPPED,
+    STATUS_CATEGORY_WARN,
 )
+
+# WARN reason_code taxonomy (NOTE structure / ambiguity); emit in evidence.metadata["reason_code"]
+WARN_REASON_UNKNOWN_TABLE_TYPE = "UNKNOWN_TABLE_TYPE"
+WARN_REASON_SCOPE_UNDETERMINED = "SCOPE_UNDETERMINED"
+WARN_REASON_MULTIPLE_TOTAL_CANDIDATES = "MULTIPLE_TOTAL_CANDIDATES"
+WARN_REASON_STRUCTURE_INCOMPLETE = "STRUCTURE_INCOMPLETE"
+WARN_REASON_NUMERIC_COLUMNS_AMBIGUOUS = "NUMERIC_COLUMNS_AMBIGUOUS"
+WARN_REASON_HEADER_CONFUSION = "HEADER_CONFUSION"
+WARN_REASON_STRUCTURE_UNDETERMINED = "STRUCTURE_UNDETERMINED"
+WARN_REASON_ROUTE_CORRECTION = "ROUTE_CORRECTION"
+WARN_REASON_CODES = frozenset(
+    {
+        WARN_REASON_UNKNOWN_TABLE_TYPE,
+        WARN_REASON_SCOPE_UNDETERMINED,
+        WARN_REASON_MULTIPLE_TOTAL_CANDIDATES,
+        WARN_REASON_STRUCTURE_INCOMPLETE,
+        WARN_REASON_NUMERIC_COLUMNS_AMBIGUOUS,
+        WARN_REASON_HEADER_CONFUSION,
+        WARN_REASON_STRUCTURE_UNDETERMINED,
+    }
+)
+
+# Skip-reason taxonomy for numeric tables with zero evidence (P0 observability)
+SKIP_REASON_INVALID_TABLE_INFO = "INVALID_TABLE_INFO"
+SKIP_REASON_STRUCTURE_UNDETERMINED = "STRUCTURE_UNDETERMINED"
+SKIP_REASON_NO_RULES_FOR_TYPE = "NO_RULES_FOR_TYPE"
+SKIP_REASON_RULES_RAN_NO_EVIDENCE = "RULES_RAN_BUT_NO_EVIDENCE"
+SKIP_REASON_PARSE_FAIL_NUMERIC = "PARSE_FAIL_NUMERIC"
+SKIP_REASON_REGISTRY_MISS = "REGISTRY_MISS"
+SKIP_REASON_ERROR_IN_RULE = "ERROR_IN_RULE"
+
 # Rule IDs that imply FAIL_TOOL_EXTRACT (extraction/structure fault)
 FAIL_TOOL_EXTRACT_NO_TOTALS = "FAIL_TOOL_EXTRACT_NO_TOTALS"
 FAIL_TOOL_EXTRACT_NO_NUMERIC = "FAIL_TOOL_EXTRACT_NO_NUMERIC"
@@ -242,6 +284,8 @@ RULE_TAXONOMY = {
     "TABLE_EMPTY": ("Info", RuleCriticality.LOW, "structure"),
     "TAX_NO_PROFIT_ROW": ("Info", RuleCriticality.LOW, "structure"),
     "TABLE_NO_TOTAL_ROW": ("Info", RuleCriticality.LOW, "structure"),
+    "NOTE_STRUCTURE_UNDETERMINED": ("Info", RuleCriticality.LOW, "structure"),
+    "UNVERIFIED_NUMERIC_TABLE": ("Info", RuleCriticality.LOW, "structure"),
     # FAIL_TOOL_* taxonomy (tool faults, not audit findings)
     "FAIL_TOOL_EXTRACT_GRID_CORRUPTION": (
         "Tool",
@@ -272,14 +316,12 @@ RULE_TAXONOMY = {
         "extraction",
     ),
     "TABLE_NO_NUMERIC_STRUCTURE": ("Info", RuleCriticality.LOW, "structure"),
+    "EXTRACTION_FALLBACK_OOXML": ("Tool", RuleCriticality.MEDIUM, "extraction"),
+    "NO_TOTAL_AND_NO_COLUMN_CHECK": ("Info", RuleCriticality.LOW, "structure"),
 }
 
 # Phase 4: Totals detection tolerance (Rule C) and min columns threshold
 # Used in base_validator._find_total_row for sum-of-previous equality
-TOTALS_TOLERANCE_ABS = 0.01  # absolute tolerance for sum vs cell
-TOTALS_TOLERANCE_REL = (
-    0.008  # relative (e.g. 0.8% of |above_sum|); relaxed for rounding
-)
 # Equity formula: slightly looser relative tolerance for rounding across balance rows
 EQUITY_TOLERANCE_REL = 0.012
 # Rule C: require at least this fraction of amount columns to satisfy sum-of-previous

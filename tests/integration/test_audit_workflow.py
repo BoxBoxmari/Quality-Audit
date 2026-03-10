@@ -45,9 +45,9 @@ class TestAuditWorkflowTraceability:
         extractor_engines = [
             t.extractor_engine for t in run_tel.tables if t.extractor_engine
         ]
-        assert (
-            extractor_engines
-        ), "At least one table must have extractor_engine set (Phase 6 traceability)"
+        assert extractor_engines, (
+            "At least one table must have extractor_engine set (Phase 6 traceability)"
+        )
 
     def test_telemetry_to_dict_includes_run_id_and_extractor_engine(
         self, audit_service, sample_word_file, tmp_path

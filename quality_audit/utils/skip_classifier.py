@@ -65,6 +65,26 @@ FINANCIAL_TABLE_ROW_LABELS = [
     "other reserves",
     "retained earnings",
     "undistributed",
+    "assets",
+    "tài sản",
+    "liabilities",
+    "nợ",
+    "borrowings",
+    "vay",
+    "revenue",
+    "doanh thu",
+    "expenses",
+    "chi phí",
+    "profit",
+    "lợi nhuận",
+    "cash",
+    "tiền",
+    "receivables",
+    "phải thu",
+    "payables",
+    "phải trả",
+    "inventory",
+    "hàng tồn kho",
 ]
 
 
@@ -184,9 +204,12 @@ def classify_footer_signature(df: pd.DataFrame, heading: str = "") -> Tuple[bool
         for x in ["vnd", "usd", "%", "percent", "million", "thousand", "triệu", "nghìn"]
     )
     high_numeric = numeric_ratio > 0.15
+    very_high_numeric = numeric_ratio > 0.30
 
-    phase2_strong = has_financial_labels or (
-        high_numeric and (has_year or has_currency)
+    phase2_strong = (
+        has_financial_labels
+        or (high_numeric and (has_year or has_currency))
+        or very_high_numeric
     )
     evidence["phase2_strong"] = phase2_strong
     evidence["has_year"] = has_year

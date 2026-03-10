@@ -101,9 +101,9 @@ class TestRenderFirstGoldSetRegression:
         # Mock test - actual implementation would run full extraction
         current_fails = 8  # Placeholder - would be computed from actual runs
 
-        assert (
-            current_fails <= target_max_fails
-        ), f"FAIL rate not reduced enough: {current_fails} > {target_max_fails}"
+        assert current_fails <= target_max_fails, (
+            f"FAIL rate not reduced enough: {current_fails} > {target_max_fails}"
+        )
 
     def test_no_silent_pass_with_low_confidence(self):
         """Test that low-confidence extractions are flagged, not silently passed."""
@@ -157,9 +157,9 @@ class TestWordReaderFallbackRegression:
         from quality_audit.io.word_reader import WordReader
 
         # Check that the fallback method exists
-        assert hasattr(
-            WordReader, "_extract_table_with_fallback"
-        ), "Fallback method should exist"
+        assert hasattr(WordReader, "_extract_table_with_fallback"), (
+            "Fallback method should exist"
+        )
 
     def test_fallback_order_preserved(self):
         """Test that fallback order is: native -> HTML -> render-first."""

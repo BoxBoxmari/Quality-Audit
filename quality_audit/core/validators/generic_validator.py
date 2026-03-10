@@ -149,6 +149,9 @@ class GenericTableValidator(BaseValidator):
                     status="INFO: Bảng không bao gồm số/số tổng",
                     marks=[],
                     cross_ref_marks=[],
+                    rule_id="TABLE_NO_NUMERIC_STRUCTURE",
+                    status_enum="INFO_SKIPPED",
+                    context={"failure_reason_code": "TABLE_NO_NUMERIC_STRUCTURE"},
                 )
 
             # Standard table validation
@@ -175,8 +178,9 @@ class GenericTableValidator(BaseValidator):
         code_cols_set: set,
     ) -> Optional[ValidationResult]:
         """Track 3: Basic parsing of specific text formulas (e.g. x 20% or A = B + C)."""
-        from ...utils.numeric_utils import is_year_like_value
         import re
+
+        from ...utils.numeric_utils import is_year_like_value
 
         marks = []
         issues = []
@@ -207,7 +211,7 @@ class GenericTableValidator(BaseValidator):
 
                     expected = prev_val * pct
                     diff = expected - val
-                    is_ok = abs(round(diff)) == 0
+                    is_ok, _, _, _ = compare_amounts(expected, val)
 
                     evaluated_assertions += 1
 
@@ -289,7 +293,7 @@ class GenericTableValidator(BaseValidator):
                         expected = op1_val - op2_val
 
                     diff = expected - target_val
-                    is_ok = abs(round(diff)) == 0
+                    is_ok, _, _, _ = compare_amounts(expected, target_val)
 
                     evaluated_assertions += 1
 
@@ -341,7 +345,10 @@ class GenericTableValidator(BaseValidator):
         Spine 3: When table is all non-numeric, use 2-phase classifier; only skip when
         footer/signature evidence is strong and financial-table evidence is weak.
         """
-        if heading_lower in TABLES_WITHOUT_TOTAL:
+        # Patch E: case-insensitive match for TABLES_WITHOUT_TOTAL
+        if heading_lower in TABLES_WITHOUT_TOTAL or any(
+            heading_lower == t.lower() for t in TABLES_WITHOUT_TOTAL
+        ):
             return True
 
         subset = df.iloc[0:]
@@ -462,7 +469,7 @@ class GenericTableValidator(BaseValidator):
         for col in text_cols_to_check:
             col_series = df[col].astype(str).str.strip()
             # We require the keyword to be on a detail row to trigger the skip
-            for idx, cell_text in col_series.items():
+            for _idx, cell_text in col_series.items():
                 if any(re.search(pat, cell_text) for pat in FORMULA_KEYWORDS):
                     is_formula_table = True
                     logger.info(
@@ -558,7 +565,12 @@ class GenericTableValidator(BaseValidator):
 
         if total_row_idx is None and not self._needs_column_check(heading_lower):
             return ValidationResult(
-                status="INFO: Bảng không có dòng/cột tổng", marks=[], cross_ref_marks=[]
+                status="INFO: Bảng không có dòng/cột tổng",
+                marks=[],
+                cross_ref_marks=[],
+                rule_id="TABLE_NO_TOTAL_ROW",
+                status_enum="INFO",
+                context={"failure_reason_code": "NO_TOTAL_AND_NO_COLUMN_CHECK"},
             )
 
         # Phase 4.3: No totals found but table needs totals → policy: structural unreliability → FAIL_TOOL_EXTRACT; else WARN

@@ -76,9 +76,9 @@ class TestGenericValidatorCodeColumnExclusion:
             comment = str(m.get("comment", ""))
             if "Tính lại" in comment:
                 # If there is a recalculation message, value must be 8 not 43
-                assert "43" not in str(
-                    m
-                ), "Row sum must exclude code columns (7+28+8=43)"
+                assert "43" not in str(m), (
+                    "Row sum must exclude code columns (7+28+8=43)"
+                )
 
     def test_code_column_not_used_in_row_total_marks(self):
         df = pd.DataFrame(

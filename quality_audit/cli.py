@@ -98,6 +98,13 @@ Examples:
         help="Path to JSON tax rate mapping file for 'individual' mode",
     )
 
+    parser.add_argument(
+        "--require-render-first",
+        action="store_true",
+        default=False,
+        help="Abort if render-first extraction fails (no OOXML fallback)",
+    )
+
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
 
     # Apply log level so validators and services emit DEBUG when requested
@@ -110,6 +117,12 @@ Examples:
     logging.getLogger("quality_audit").setLevel(log_level)
 
     try:
+        from quality_audit import BUILD_STAMP
+
+        print(f"Quality Audit BUILD_STAMP={BUILD_STAMP}")
+        logger_root = logging.getLogger("quality_audit")
+        logger_root.info("BUILD_STAMP=%s", BUILD_STAMP)
+
         # Validate input path
         input_path = Path(args.input_path)
         if not input_path.exists():

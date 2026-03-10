@@ -29,12 +29,11 @@ def test_canonicalize_removes_numeric_index_columns() -> None:
 
 def test_canonicalize_drops_first_row_when_index_artifact() -> None:
     """First row that is exactly 0,1,2,... is dropped as index artifact."""
+    # Construct with integers on the first row to avoid StringDtype TypeErrors
     df = pd.DataFrame(
-        [["Code", "Amount", "Note"], ["A", 100, "x"], ["B", 200, "y"]],
+        [[0, 1, 2], ["A", 100, "x"], ["B", 200, "y"]],
         columns=["Col_0", "Col_1", "Col_2"],
-    )
-    # Make first row look like 0, 1, 2 (numeric)
-    df.iloc[0] = [0, 1, 2]
+    ).astype(object)
     out, report = canonicalize_table(df, None)
     assert report.has_index_row
     assert "dropped_first_row_index_artifact" in report.actions_taken

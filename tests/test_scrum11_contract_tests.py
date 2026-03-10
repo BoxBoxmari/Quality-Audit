@@ -314,9 +314,9 @@ class TestSchemaInvariants:
 
         for rule_id, diff, is_skipped, expected in test_cases:
             severity = validator._calculate_severity(rule_id, diff, is_skipped)
-            assert (
-                severity == expected
-            ), f"Rule {rule_id}: expected {expected}, got {severity}"
+            assert severity == expected, (
+                f"Rule {rule_id}: expected {expected}, got {severity}"
+            )
 
     def test_root_cause_not_all_general(self):
         """Verify root_cause inference produces variety (SCRUM-8)."""
@@ -336,9 +336,9 @@ class TestSchemaInvariants:
 
         for rule_id, context, expected in test_cases:
             root_cause = validator._infer_root_cause(rule_id, context)
-            assert (
-                root_cause == expected
-            ), f"Rule {rule_id}: expected {expected}, got {root_cause}"
+            assert root_cause == expected, (
+                f"Rule {rule_id}: expected {expected}, got {root_cause}"
+            )
 
     def test_max_diff_extraction(self):
         """Verify max_diff is extracted correctly (SCRUM-8)."""

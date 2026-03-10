@@ -144,13 +144,15 @@ class TestCodePreservation:
         )
 
         # Code column should be string
-        assert df["Code"].dtype == object or df["Code"].dtype.name == "object"
+        assert df["Code"].dtype.name in ("object", "string", "string[python]", "str")
 
         # After preservation, should still be string
         df_preserved = validator._preserve_code_column_as_string(df, "Code")
-        assert (
-            df_preserved["Code"].dtype == object
-            or df_preserved["Code"].dtype.name == "object"
+        assert df_preserved["Code"].dtype.name in (
+            "object",
+            "string",
+            "string[python]",
+            "str",
         )
 
         # Leading zeros should be preserved

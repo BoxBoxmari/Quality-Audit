@@ -65,6 +65,13 @@ class TableTelemetry:
     p10_cell_confidence: float | None = None
     empty_cell_ratio: float | None = None
     debug_artifact_path: str | None = None
+    # P0: NOTE structure observability and WARN reason
+    label_col: str | None = None
+    amount_cols: List[str] | None = None
+    segments_count: int | None = None
+    structure_confidence: float | None = None
+    row_type_counts: Dict[str, int] | None = None
+    warn_reason_code: str | None = None
 
 
 @dataclass
@@ -145,6 +152,13 @@ class RunTelemetry:
                     "p10_cell_confidence": t.p10_cell_confidence,
                     "empty_cell_ratio": t.empty_cell_ratio,
                     "debug_artifact_path": t.debug_artifact_path,
+                    # P0: NOTE structure observability and WARN reason
+                    "label_col": t.label_col,
+                    "amount_cols": t.amount_cols,
+                    "segments_count": t.segments_count,
+                    "structure_confidence": t.structure_confidence,
+                    "row_type_counts": t.row_type_counts,
+                    "warn_reason_code": t.warn_reason_code,
                 }
                 for t in self.tables
             ],
@@ -316,6 +330,13 @@ class TelemetryCollector:
             p10_cell_confidence = ctx.get("p10_cell_confidence")
             empty_cell_ratio = ctx.get("empty_cell_ratio")
             debug_artifact_path = ctx.get("debug_artifact_path")
+            # P0: NOTE structure observability and WARN reason
+            label_col = ctx.get("label_col")
+            amount_cols = ctx.get("amount_cols")
+            segments_count = ctx.get("segments_count")
+            structure_confidence = ctx.get("structure_confidence")
+            row_type_counts = ctx.get("row_type_counts")
+            warn_reason_code = ctx.get("reason_code") if status_enum == "WARN" else None
         else:
             heading_source = None
             heading_confidence = None
@@ -335,6 +356,12 @@ class TelemetryCollector:
             p10_cell_confidence = None
             empty_cell_ratio = None
             debug_artifact_path = None
+            label_col = None
+            amount_cols = None
+            segments_count = None
+            structure_confidence = None
+            row_type_counts = None
+            warn_reason_code = None
 
         table_telemetry = TableTelemetry(
             table_index=self._current_table_index,
@@ -376,6 +403,13 @@ class TelemetryCollector:
             p10_cell_confidence=p10_cell_confidence,
             empty_cell_ratio=empty_cell_ratio,
             debug_artifact_path=debug_artifact_path,
+            # P0: NOTE structure observability and WARN reason
+            label_col=label_col,
+            amount_cols=amount_cols,
+            segments_count=segments_count,
+            structure_confidence=structure_confidence,
+            row_type_counts=row_type_counts,
+            warn_reason_code=warn_reason_code,
         )
 
         self.run_telemetry.tables.append(table_telemetry)
@@ -428,7 +462,7 @@ class TelemetryCollector:
         """Count tables by status enum."""
         counts: Dict[str, int] = {}
         for table in self.run_telemetry.tables:
-            status = table.status_enum
+            status = str(table.status_enum or "").strip().upper() or "UNKNOWN"
             counts[status] = counts.get(status, 0) + 1
         return counts
 

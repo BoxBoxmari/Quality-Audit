@@ -126,9 +126,10 @@ class CashFlowValidator(BaseValidator):
                     context={"failure_reason_code": "NO_NUMERIC_EVIDENCE", **metadata},
                 )
 
-            # Build data map for this table
-            data: Dict[str, Tuple[float, float]] = {}
-            code_rowpos: Dict[str, int] = {}
+            # Build data map for this table using multi-map approach
+            from collections import defaultdict
+
+            data_map: Dict[str, List[tuple]] = defaultdict(list)
             rows_cache = []
 
             for ridx, row in tmp.iterrows():
@@ -141,9 +142,7 @@ class CashFlowValidator(BaseValidator):
 
                 # Only aggregate valid codes at table level
                 if code and re.match(r"^[0-9]+[A-Z]?$", code):
-                    agg_cur, agg_pr = data.get(code, (0.0, 0.0))
-                    data[code] = (agg_cur + cur_val, agg_pr + prior_val)
-                    code_rowpos.setdefault(code, ridx)
+                    data_map[code].append((cur_val, prior_val, ridx))
 
             # Handle special case for Code 18
             target_set = {str(i) for i in range(14, 21)}
@@ -162,8 +161,7 @@ class CashFlowValidator(BaseValidator):
                 if (prev_code == "" or prev_code is None) and (
                     abs(prev_cur) + abs(prev_pr) != 0
                 ):
-                    data["18"] = (prev_cur, prev_pr)
-                    code_rowpos.setdefault("18", idx18)
+                    data_map["18"].append((prev_cur, prev_pr, idx18))
 
             # Get column positions
             try:
@@ -173,9 +171,14 @@ class CashFlowValidator(BaseValidator):
                 cur_col_pos = len(header) - 2
                 prior_col_pos = len(header) - 1
 
+            # Flat dictionary for mathematical cross-table aggregations
+            flat_data: Dict[str, Tuple[float, float]] = {}
+            for c, lst in data_map.items():
+                flat_data[c] = (sum(v[0] for v in lst), sum(v[1] for v in lst))
+
             # P2-1: Optional document-level cross-table aggregation via AuditContext
             flags = get_feature_flags()
-            aggregated_data: Dict[str, Tuple[float, float]] = data
+            aggregated_data: Dict[str, Tuple[float, float]] = flat_data
             context: Optional[AuditContext] = getattr(self, "context", None)
             if flags.get("cashflow_cross_table_context", False) and context is not None:
                 registry = context.cash_flow_registry or {}
@@ -184,7 +187,7 @@ class CashFlowValidator(BaseValidator):
                     aggregated_data = registry
                 else:
                     # Backward-compatible sequential merge when no pre-built registry
-                    for code, (cur_v, pr_v) in data.items():
+                    for code, (cur_v, pr_v) in flat_data.items():
                         r_cur, r_pr = registry.get(code, (0.0, 0.0))
                         registry[code] = (r_cur + cur_v, r_pr + pr_v)
                     context.cash_flow_registry = registry
@@ -218,41 +221,39 @@ class CashFlowValidator(BaseValidator):
                 is_ok_cy = abs(round(dc)) == 0
                 is_ok_py = abs(round(dp)) == 0
 
-                if parent_norm in code_rowpos:
-                    # SCRUM-11: If header_idx = -1, header already promoted, no offset needed
-                    df_row = (
-                        (header_idx + 1 + code_rowpos[parent_norm])
-                        if header_idx >= 0
-                        else code_rowpos[parent_norm]
-                    )
-                    comment = (
-                        f"{parent_norm} = {' + '.join(children).replace('+ -', ' - ')}; "
-                        f"Tính={cur_sum:,.0f}/{prior_sum:,.0f}; Thực tế={ac_cur:,.0f}/{ac_pr:,.0f}; Δ={dc:,.0f}/{dp:,.0f}"
-                        + (f"; Thiếu={','.join(missing)}" if missing else "")
-                    )
-                    marks.append(
-                        {
-                            "row": df_row,
-                            "col": cur_col_pos,
-                            "ok": is_ok_cy,
-                            "comment": None if is_ok_cy else comment,
-                        }
-                    )
-                    marks.append(
-                        {
-                            "row": df_row,
-                            "col": prior_col_pos,
-                            "ok": is_ok_py,
-                            "comment": None if is_ok_py else comment,
-                        }
-                    )
+                comment = (
+                    f"{parent_norm} = {' + '.join(children).replace('+ -', ' - ')}; "
+                    f"Tính={cur_sum:,.0f}/{prior_sum:,.0f}; Thực tế={ac_cur:,.0f}/{ac_pr:,.0f}; Δ={dc:,.0f}/{dp:,.0f}"
+                    + (f"; Thiếu={','.join(missing)}" if missing else "")
+                )
+
+                if parent_norm in data_map:
+                    for _, _, ridx in data_map[parent_norm]:
+                        # SCRUM-11: If header_idx = -1, header already promoted, no offset needed
+                        df_row = (header_idx + 1 + ridx) if header_idx >= 0 else ridx
+                        marks.append(
+                            {
+                                "row": df_row,
+                                "col": cur_col_pos,
+                                "ok": is_ok_cy,
+                                "comment": None if is_ok_cy else comment,
+                            }
+                        )
+                        marks.append(
+                            {
+                                "row": df_row,
+                                "col": prior_col_pos,
+                                "ok": is_ok_py,
+                                "comment": None if is_ok_py else comment,
+                            }
+                        )
 
                 if not is_ok_cy or not is_ok_py:
                     issues.append(comment)
 
             # Apply cash flow rules
             check("08", ["01", "02", "03", "04", "05", "06", "07"])
-            if "18" in data:
+            if "18" in data_map:
                 check("18", ["08", "09", "10", "11", "12", "13"])
             check("20", ["08", "09", "10", "11", "12", "13", "14", "15", "16", "17"])
             check("30", ["21", "22", "23", "24", "25", "26", "27"])

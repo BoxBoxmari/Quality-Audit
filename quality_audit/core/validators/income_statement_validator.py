@@ -4,7 +4,7 @@ Income Statement validator implementation.
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -152,9 +152,10 @@ class IncomeStatementValidator(BaseValidator):
                     context={"failure_reason_code": "NO_NUMERIC_EVIDENCE", **metadata},
                 )
 
-            # Build data maps
-            data: Dict[str, tuple] = {}
-            code_rowpos: Dict[str, int] = {}
+            # Build data maps using multi-map approach to prevent overwriting on duplicate codes
+            from collections import defaultdict
+
+            data_map: Dict[str, List[tuple]] = defaultdict(list)
             custom_formulas: Dict[str, List[str]] = {}
 
             label_cols = metadata.get("label_cols", [])
@@ -171,7 +172,11 @@ class IncomeStatementValidator(BaseValidator):
                                 # Normalize target code before storing
                                 t_code_norm = self._normalize_code(t_code)
                                 custom_formulas[t_code_norm] = c_list
-                                logger.info("Parsed custom formula for %s: %s", t_code_norm, c_list)
+                                logger.info(
+                                    "Parsed custom formula for %s: %s",
+                                    t_code_norm,
+                                    c_list,
+                                )
                                 break
 
                 code_raw = row.get(code_col)
@@ -182,18 +187,13 @@ class IncomeStatementValidator(BaseValidator):
                 cur_val = parse_numeric(row.get(cur_col, ""))
                 prior_val = parse_numeric(row.get(prior_col, ""))
 
-                if code in data:
-                    old_cur, old_pr = data[code]
-                    if (
-                        abs(cur_val) + abs(prior_val) == 0
-                        and abs(old_cur) + abs(old_pr) != 0
-                    ):
-                        continue
-
-                data[code] = (cur_val, prior_val)
+                # Append to list to safely handle duplicate codes
+                data_map[code].append((cur_val, prior_val, ridx))
 
                 # Cross-check cache: always store by code (e.g., '50')
-                cross_check_cache.set(code, (cur_val, prior_val))
+                # For cross_check_cache, we sum up if there are duplicates
+                old_cur, old_pr = cross_check_cache.get(code) or (0.0, 0.0)
+                cross_check_cache.set(code, (old_cur + cur_val, old_pr + prior_val))
 
                 # Store account name when there is a Note reference
                 if note_col is not None and str(row.get(note_col, "")).strip() != "":
@@ -209,20 +209,23 @@ class IncomeStatementValidator(BaseValidator):
                     )
                     acc_name = str(row.get(account_col, "")).strip().lower()
                     if acc_name:
-                        cross_check_cache.set(acc_name, (cur_val, prior_val))
+                        old_nm_cur, old_nm_pr = cross_check_cache.get(acc_name) or (
+                            0.0,
+                            0.0,
+                        )
+                        cross_check_cache.set(
+                            acc_name, (old_nm_cur + cur_val, old_nm_pr + prior_val)
+                        )
 
                 # Aggregate codes '51' and '52' into "income tax" (regardless of Note)
                 if code in ["51", "52"]:
-                    cached_income_tax = cross_check_cache.get("income tax")
-                    if cached_income_tax:
-                        old_cur, old_pr = cached_income_tax
-                    else:
-                        old_cur, old_pr = 0.0, 0.0
-                    cross_check_cache.set(
-                        "income tax", (cur_val + old_cur, prior_val + old_pr)
+                    old_cur_it, old_pr_it = cross_check_cache.get("income tax") or (
+                        0.0,
+                        0.0,
                     )
-
-                code_rowpos.setdefault(code, ridx)
+                    cross_check_cache.set(
+                        "income tax", (cur_val + old_cur_it, prior_val + old_pr_it)
+                    )
 
             # Get column positions
             try:
@@ -238,35 +241,36 @@ class IncomeStatementValidator(BaseValidator):
 
             def check(parent, default_children, label=None):
                 parent_norm = self._normalize_code(parent)
-                if parent_norm not in data:
+                if parent_norm not in data_map:
                     return
 
                 children = custom_formulas.get(parent_norm, default_children)
 
                 have_any, cur_sum, prior_sum, missing = self._sum_weighted(
-                    data, children
+                    data_map, children
                 )
                 if not have_any:
                     return
 
-                ac_cur, ac_pr = data[parent_norm]
+                # Sum all occurrences of this parent code
+                ac_cur = sum(v[0] for v in data_map[parent_norm])
+                ac_pr = sum(v[1] for v in data_map[parent_norm])
+
                 dc = cur_sum - ac_cur
                 dp = prior_sum - ac_pr
                 is_ok_cy = abs(round(dc)) == 0
                 is_ok_py = abs(round(dp)) == 0
 
-                if parent_norm in code_rowpos:
+                comment = (
+                    f"{parent_norm} = {' + '.join(children).replace('+ -', ' - ')}; "
+                    f"Tính={cur_sum:,.0f}/{prior_sum:,.0f}; Thực tế={ac_cur:,.0f}/{ac_pr:,.0f}; Δ={dc:,.0f}/{dp:,.0f}"
+                    + (f"; Thiếu={','.join(missing)}" if missing else "")
+                )
+
+                # Mark errors on all occurrences of this parent code
+                for _, _, ridx in data_map[parent_norm]:
                     # SCRUM-11: If header_idx = -1, header already promoted, no offset needed
-                    df_row = (
-                        (header_idx + 1 + code_rowpos[parent_norm])
-                        if header_idx >= 0
-                        else code_rowpos[parent_norm]
-                    )
-                    comment = (
-                        f"{parent_norm} = {' + '.join(children).replace('+ -', ' - ')}; "
-                        f"Tính={cur_sum:,.0f}/{prior_sum:,.0f}; Thực tế={ac_cur:,.0f}/{ac_pr:,.0f}; Δ={dc:,.0f}/{dp:,.0f}"
-                        + (f"; Thiếu={','.join(missing)}" if missing else "")
-                    )
+                    df_row = (header_idx + 1 + ridx) if header_idx >= 0 else ridx
                     marks.append(
                         {
                             "row": df_row,
@@ -290,7 +294,7 @@ class IncomeStatementValidator(BaseValidator):
             # SCRUM-12: Template selection - check if code 10 exists to determine template
             # Template 1: Has code 10 -> check 10=01-02, 20=10-11
             # Template 2: No code 10 -> check 20=01-11 (or 20=01-02-11)
-            has_code_10 = "10" in data
+            has_code_10 = "10" in data_map
 
             # Apply income statement rules with template selection
             if has_code_10:
@@ -349,7 +353,9 @@ class IncomeStatementValidator(BaseValidator):
         finally:
             self._current_table_context = {}
 
-    def _sum_weighted(self, data: Dict[str, tuple], children: List[str]) -> tuple:
+    def _sum_weighted(
+        self, data_map: Dict[str, List[tuple]], children: List[str]
+    ) -> tuple:
         """Calculate weighted sum for income statement rules."""
         have_any = False
         cur_sum = prior_sum = 0.0
@@ -361,8 +367,9 @@ class IncomeStatementValidator(BaseValidator):
             code = token[1:] if sign == -1 else token
             cn = self._normalize_code(code)
 
-            if cn in data:
-                ccur, cprior = data[cn]
+            if cn in data_map:
+                ccur = sum(v[0] for v in data_map[cn])
+                cprior = sum(v[1] for v in data_map[cn])
                 cur_sum += sign * ccur
                 prior_sum += sign * cprior
                 have_any = True
@@ -371,53 +378,53 @@ class IncomeStatementValidator(BaseValidator):
 
         return have_any, cur_sum, prior_sum, missing
 
-    def _parse_inline_formula(self, text: str) -> Optional[Tuple[str, List[str]]]:
+    def _parse_inline_formula(self, text: str) -> Optional[tuple[str, list[str]]]:
         """
         Parse inline formula from row description.
         Example: "Lợi nhuận (30 = 20 + (21-22) - 25 - 26)" -> ("30", ["20", "21", "-22", "-25", "-26"])
         """
         if not isinstance(text, str):
             return None
-        
+
         match = re.search(r"(\d{2})\s*=\s*([0-9\s\+\-\(\)]+)", text)
         if not match:
             return None
-            
+
         target_code = match.group(1).strip()
         expression = match.group(2).strip()
-        
+
         clean_exp = expression.replace(" ", "")
         # Remove trailing unclosed parenthesis if any (can happen if regex consumes the closing bracket of the text)
         if clean_exp.endswith(")") and clean_exp.count("(") < clean_exp.count(")"):
             clean_exp = clean_exp[:-1]
-            
+
         children = []
         current_sign = 1
         sign_stack = [1]
-        
-        tokens = re.findall(r'(\d{2}|\+|\-|\(|\))', clean_exp)
-        
+
+        tokens = re.findall(r"(\d{2}|\+|\-|\(|\))", clean_exp)
+
         for token in tokens:
-            if token == '+':
+            if token == "+":
                 current_sign = 1
-            elif token == '-':
+            elif token == "-":
                 current_sign = -1
-            elif token == '(':
+            elif token == "(":
                 effective_sign = sign_stack[-1] * current_sign
                 sign_stack.append(effective_sign)
                 current_sign = 1
-            elif token == ')':
+            elif token == ")":
                 if len(sign_stack) > 1:
                     sign_stack.pop()
-            elif re.match(r'^\d{2}$', token):
+            elif re.match(r"^\d{2}$", token):
                 eff_sign = sign_stack[-1] * current_sign
                 if eff_sign == 1:
                     children.append(token)
                 else:
                     children.append("-" + token)
                 current_sign = 1
-                
+
         if not children:
             return None
-            
+
         return target_code, children

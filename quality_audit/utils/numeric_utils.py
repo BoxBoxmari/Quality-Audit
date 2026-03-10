@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
 
-from ..config.constants import TOTALS_TOLERANCE_ABS, TOTALS_TOLERANCE_REL
 from ..config.feature_flags import get_feature_flags
 
 
@@ -262,9 +261,9 @@ def compare_amounts(
         - tolerance_used: "abs" | "rel" (which bound was applied for reporting)
     """
     if abs_tol is None:
-        abs_tol = TOTALS_TOLERANCE_ABS
+        abs_tol = 0.01
     if rel_tol is None:
-        rel_tol = TOTALS_TOLERANCE_REL
+        rel_tol = 0.008
 
     if pd.isna(expected) or pd.isna(actual):
         return (False, float("nan"), float("nan"), "none")

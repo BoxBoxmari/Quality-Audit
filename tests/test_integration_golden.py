@@ -1,5 +1,5 @@
 """
-Phase 6: Integration golden test — full pipeline on sample DOCX; assert summary sheet has Heading Source, Classifier Reason, Assertions Count.
+Phase 6: Integration golden test — full pipeline on sample DOCX; assert summary sheet and Run metadata Per-Table Extraction columns.
 """
 
 import pytest
@@ -13,7 +13,7 @@ from quality_audit.services.audit_service import AuditService
 
 
 class TestIntegrationGolden:
-    """Run pipeline on sample_word_file; verify summary sheet metadata columns."""
+    """Run pipeline on sample_word_file; verify summary sheet and Run metadata columns."""
 
     @pytest.fixture
     def audit_service(self):
@@ -40,12 +40,24 @@ class TestIntegrationGolden:
 
         wb = load_workbook(excel_path)
         assert "Tổng hợp kiểm tra" in wb.sheetnames
-        ws = wb["Tổng hợp kiểm tra"]
-        assert (
-            ws.max_row >= 2
-        ), "Summary sheet should have header + at least one data row"
+        ws_summary = wb["Tổng hợp kiểm tra"]
+        assert ws_summary.max_row >= 2, (
+            "Summary sheet should have header + at least one data row"
+        )
+        # Summary sheet: A=Tên bảng, B=Trạng thái kiểm tra, C=Status Enum (excel_writer write_summary_sheet)
+        assert ws_summary.cell(row=1, column=3).value == "Status Enum"
 
-        # Row 1 = headers. Columns: 25=Heading Source, 29=Classifier Reason, 31=Assertions Count
-        assert ws.cell(row=1, column=25).value == "Heading Source"
-        assert ws.cell(row=1, column=29).value == "Classifier Reason"
-        assert ws.cell(row=1, column=31).value == "Assertions Count"
+        # Heading Source, Classifier Reason, Assertions Count are on Run metadata, Per-Table Extraction block (excel_writer)
+        assert "Run metadata" in wb.sheetnames
+        ws_run = wb["Run metadata"]
+        header_row = None
+        for r in range(1, min(ws_run.max_row + 1, 100)):
+            if ws_run.cell(row=r, column=1).value == "Per-Table Extraction":
+                header_row = r + 1
+                break
+        assert header_row is not None, (
+            "Per-Table Extraction section not found on Run metadata"
+        )
+        assert ws_run.cell(row=header_row, column=3).value == "Heading Source"
+        assert ws_run.cell(row=header_row, column=12).value == "Classifier Reason"
+        assert ws_run.cell(row=header_row, column=14).value == "Assertions Count"

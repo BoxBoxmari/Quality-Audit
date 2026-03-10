@@ -64,17 +64,11 @@ class TestRemediationIssueC1:
         ctx = AuditContext()
         validator = GenericTableValidator(context=ctx)
         result = validator.validate(df, "balance sheet")
-        status_enum = getattr(result, "status_enum", None) or "UNKNOWN"
-        assert status_enum in (
-            "PASS",
-            "WARN",
-            "INFO",
-            "INFO_SKIPPED",
-            "UNKNOWN",
-            "FAIL",
-        )
-        if ctx.marks:
-            assert "test account" in ctx.marks or not result.marks
+        # Verify that generic validation passes and marks are returned
+        assert result.status_enum in ("PASS", "INFO", "INFO_SKIPPED")
+        if result.marks:
+            # Should have validated the Total column (which is correct)
+            assert any(m.get("ok", False) for m in result.marks)
 
 
 class TestP0ExtractionAmountColumns:

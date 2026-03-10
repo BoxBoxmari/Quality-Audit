@@ -85,6 +85,7 @@ class TestTableTransformerRecognizer:
 
     def test_detect_cells_with_mocked_model(self):
         """Test detect_cells with mocked transformer model outputs."""
+        pytest.importorskip("torch")
         from quality_audit.io.extractors.structure.table_transformer import (
             TableTransformerRecognizer,
         )

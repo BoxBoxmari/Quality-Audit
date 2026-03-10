@@ -113,9 +113,7 @@ class ExcelWriter:
         with suppress(Exception):
             wb.active = wb.sheetnames.index("Tổng hợp kiểm tra")
 
-        run_id = ""
-        if telemetry is not None and getattr(telemetry, "run_telemetry", None):
-            run_id = getattr(telemetry.run_telemetry, "run_id", "") or ""
+        # run_id and other telemetry metadata have been removed from the visible sheet
 
         # Headers:
         # A: Tên bảng, B: Trạng thái kiểm tra, C: Status Enum, D: Status Category (WARN taxonomy), E: Rule ID, F: Validator Type
@@ -132,32 +130,6 @@ class ExcelWriter:
                 "Extractor Engine",
                 "Quality Score",
                 "Failure Reason Code",
-                "run_id",
-                "Engine Attempts",
-                "Invariants Failed",
-                "Grid Cols Expected",
-                "Grid Cols Built",
-                "GridSpan Count",
-                "vMerge Count",
-                "Total Row Method",
-                "Total Row Index",
-                "Total Row Confidence",
-                "Column Classification Method",
-                "Render First Rejection",
-                "Render First Confidence",
-                "Render First Coverage",
-                "Excluded Columns",
-                "Heading Source",
-                "Heading Confidence",
-                "Classifier Type",
-                "Classifier Confidence",
-                "Classifier Reason",
-                "Extractor Usable Reason",
-                "Assertions Count",
-                "Numeric Evidence",
-                "CY Column",
-                "PY Column",
-                "Reason Code",
             ]
         )
 
@@ -166,7 +138,6 @@ class ExcelWriter:
         ):
             row_idx = i + 2
             ctx = result.get("context") or {}
-            total_row_meta = ctx.get("total_row_metadata") or {}
             # Column A: Table Name with hyperlink to FS casting (sanitize for formula injection)
             table_id = result.get("table_id")
             cell = ws.cell(
@@ -232,149 +203,6 @@ class ExcelWriter:
                     or ""
                 ),
             )
-            ws.cell(row=row_idx, column=10, value=run_id)
-            # R1: K–P per-table baseline
-            engine_attempts = ctx.get("engine_attempts")
-            ws.cell(
-                row=row_idx,
-                column=11,
-                value=(
-                    ",".join(engine_attempts)
-                    if isinstance(engine_attempts, list)
-                    else engine_attempts
-                ),
-            )
-            invariants_failed = ctx.get("invariants_failed")
-            ws.cell(
-                row=row_idx,
-                column=12,
-                value=(
-                    ",".join(invariants_failed)
-                    if isinstance(invariants_failed, list)
-                    else invariants_failed
-                ),
-            )
-            ws.cell(row=row_idx, column=13, value=ctx.get("grid_cols_expected"))
-            ws.cell(row=row_idx, column=14, value=ctx.get("grid_cols_built"))
-            ws.cell(row=row_idx, column=15, value=ctx.get("gridSpan_count"))
-            ws.cell(row=row_idx, column=16, value=ctx.get("vMerge_count"))
-            # P1 forensic: Q–T from total_row_metadata and context
-            ws.cell(row=row_idx, column=17, value=total_row_meta.get("method"))
-            ws.cell(row=row_idx, column=18, value=total_row_meta.get("total_row_idx"))
-            ws.cell(row=row_idx, column=19, value=total_row_meta.get("confidence"))
-            _ccm = ctx.get("column_classification_method")
-            ws.cell(
-                row=row_idx,
-                column=20,
-                value=sanitize_excel_value(_ccm) if isinstance(_ccm, str) else _ccm,
-            )
-            # P0-1/P0-3: Render-first telemetry and excluded_columns
-            render_first_meta = ctx.get("render_first_metadata") or {}
-            ws.cell(
-                row=row_idx,
-                column=21,
-                value=sanitize_excel_value(
-                    render_first_meta.get("rejection_reason") or ""
-                ),
-            )
-            rf_conf = render_first_meta.get("mean_cell_confidence")
-            ws.cell(
-                row=row_idx,
-                column=22,
-                value=round(float(rf_conf), 4) if rf_conf is not None else None,
-            )
-            rf_cov = render_first_meta.get("token_coverage_ratio")
-            ws.cell(
-                row=row_idx,
-                column=23,
-                value=round(float(rf_cov), 4) if rf_cov is not None else None,
-            )
-            excluded_cols = ctx.get("excluded_columns")
-            ws.cell(
-                row=row_idx,
-                column=24,
-                value=(
-                    ",".join(str(c) for c in excluded_cols)
-                    if isinstance(excluded_cols, (list, tuple))
-                    else sanitize_excel_value(excluded_cols or "")
-                ),
-            )
-            # Phase 0: Heading / classifier / extractor metadata and assertions_count
-            ws.cell(
-                row=row_idx,
-                column=25,
-                value=sanitize_excel_value(ctx.get("heading_source") or ""),
-            )
-            heading_conf = ctx.get("heading_confidence")
-            ws.cell(
-                row=row_idx,
-                column=26,
-                value=(
-                    round(float(heading_conf), 4) if heading_conf is not None else None
-                ),
-            )
-            ws.cell(
-                row=row_idx,
-                column=27,
-                value=sanitize_excel_value(ctx.get("classifier_primary_type") or ""),
-            )
-            cl_conf = ctx.get("classifier_confidence")
-            ws.cell(
-                row=row_idx,
-                column=28,
-                value=round(float(cl_conf), 4) if cl_conf is not None else None,
-            )
-            ws.cell(
-                row=row_idx,
-                column=29,
-                value=sanitize_excel_value(ctx.get("classifier_reason") or ""),
-            )
-            ws.cell(
-                row=row_idx,
-                column=30,
-                value=sanitize_excel_value(ctx.get("extractor_usable_reason") or ""),
-            )
-            ws.cell(
-                row=row_idx,
-                column=31,
-                value=result.get("assertions_count", ctx.get("assertions_count")),
-            )
-            # P4.2: Diagnostic columns - numeric evidence, CY/PY, reason_code
-            num_ev = ctx.get("numeric_evidence_score")
-            ws.cell(
-                row=row_idx,
-                column=32,
-                value=round(float(num_ev), 4) if num_ev is not None else None,
-            )
-            cy_col = ctx.get("cy_column")
-            if cy_col is None and isinstance(ctx.get("amount_columns"), (list, tuple)):
-                ac = ctx.get("amount_columns")
-                cy_col = ac[0] if ac else None
-            ws.cell(
-                row=row_idx,
-                column=33,
-                value=sanitize_excel_value(cy_col if cy_col is not None else ""),
-            )
-            py_col = ctx.get("py_column")
-            ac = ctx.get("amount_columns")
-            if py_col is None and isinstance(ac, (list, tuple)) and len(ac) > 1:
-                py_col = ac[1]
-            ws.cell(
-                row=row_idx,
-                column=34,
-                value=sanitize_excel_value(py_col if py_col is not None else ""),
-            )
-            reason_code = (
-                ctx.get("reason_code")
-                or result.get("failure_reason_code")
-                or ctx.get("failure_reason_code")
-                or ""
-            )
-            ws.cell(
-                row=row_idx,
-                column=35,
-                value=sanitize_excel_value(reason_code),
-            )
 
         # SCRUM-8: Apply conditional formatting ONLY to Status Enum column (column C)
         self._apply_status_colors_to_enum_column(ws)
@@ -406,17 +234,24 @@ class ExcelWriter:
             table = table.map(sanitize_excel_value)
 
             # Create sheet name
+            flags = get_feature_flags()
             note_num = result.get("context", {}).get("note_number")
             raw_name = heading if heading else f"Bảng {i + 1}"
-            if note_num:
+            if note_num and flags.get("ENABLE_NOTE_NUMBER_MAPPING", True):
                 raw_name = f"[Note {note_num}] {raw_name}"
-            sheet_name = self._shorten_sheet_name(raw_name)
+
+            # Excel limits sheet names to 31 characters.
+            # We reserve 4-5 chars for suffixes (e.g. "_999"), so max base length is 26.
+            sheet_name = self._shorten_sheet_name(raw_name, max_length=26)
 
             # Ensure unique sheet name
             original_name = sheet_name
-            counter = 1
+            counter = 2
             while sheet_name in wb.sheetnames:
-                sheet_name = f"{original_name}_{counter}"
+                suffix = f"_{counter}"
+                # Safely truncate original name if suffix makes it > 31
+                cutoff = 31 - len(suffix)
+                sheet_name = f"{original_name[:cutoff]}{suffix}"
                 counter += 1
 
             sheet_names.append(sheet_name)
@@ -625,13 +460,34 @@ class ExcelWriter:
 
     def save_workbook(self, wb: Workbook, file_path: str) -> None:
         """
-        Save workbook to file.
+        Save workbook to file with fallback if path is locked.
 
         Args:
             wb: Excel workbook
             file_path: Output file path
         """
-        wb.save(file_path)
+        import logging
+        import os
+
+        logger = logging.getLogger(__name__)
+
+        base, ext = os.path.splitext(file_path)
+        counter = 1
+        current_path = file_path
+
+        while True:
+            try:
+                wb.save(current_path)
+                if current_path != file_path:
+                    logger.warning(
+                        f"File {file_path} is locked. Saved as {current_path} instead."
+                    )
+                break
+            except PermissionError:
+                current_path = f"{base}_{counter}{ext}"
+                counter += 1
+                if counter > 50:
+                    raise
 
     def _shorten_sheet_name(self, name: str, max_length: int = 20) -> str:
         """
@@ -858,11 +714,14 @@ class ExcelWriter:
         ws["A3"] = "Metrics"
         ws["A3"].font = _font_with(ws["A3"].font, bold=True)
 
-        # Count by status
+        # Count by status (normalize to avoid case/spacing mismatches)
+        def _normalized_status(result: dict) -> str:
+            return str(result.get("status_enum") or "").strip().upper()
+
         total = len(results)
-        passed = sum(1 for r in results if r.get("status_enum") == "PASS")
-        failed = sum(1 for r in results if r.get("status_enum") == "FAIL")
-        warnings = sum(1 for r in results if r.get("status_enum") == "WARN")
+        passed = sum(1 for r in results if _normalized_status(r) == "PASS")
+        failed = sum(1 for r in results if _normalized_status(r) == "FAIL")
+        warnings = sum(1 for r in results if _normalized_status(r) == "WARN")
 
         # Row 5: Metrics
         ws["A5"] = "Total Tables"
@@ -1009,11 +868,14 @@ class ExcelWriter:
         ws.column_dimensions["K"].hidden = True
 
         # Filter findings (FAIL/WARN and tool/data statuses)
+        # Exclude LOW confidence / LOW severity results from the Focus List
         findings = [
             r
             for r in results
             if r.get("status_enum")
             in ["FAIL", "WARN", "FAIL_TOOL_EXTRACT", "FAIL_TOOL_LOGIC", "FAIL_DATA"]
+            and r.get("confidence", "MEDIUM") != "LOW"
+            and r.get("severity", "MEDIUM") != "LOW"
         ]
 
         # Sort by severity (HIGH > MEDIUM > LOW)

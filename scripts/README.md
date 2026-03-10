@@ -109,14 +109,6 @@ Verifies P0 columns (Render First Rejection, Mean Cell Confidence, etc.) in audi
 python scripts/verify_p0_columns.py path/to/audit_output.xlsx
 ```
 
-### debug_equity_no_evidence.py
-
-Temporary debug script for equity NO_EVIDENCE behavior. Writes to `reports/debug_equity_out.txt`. Run from repo root.
-
-```bash
-python scripts/debug_equity_no_evidence.py
-```
-
 ## Dependencies
 
 Same as main package: pandas, openpyxl, python-docx. Run from repo root so `quality_audit` is importable for `dump_table_columns.py`.

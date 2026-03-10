@@ -91,6 +91,10 @@ class RenderFirstExtractionResult:
     structure_recognizer: Optional[str] = None
     ocr_engine: Optional[str] = None
 
+    # Ticket 1: Extraction quality metadata
+    extraction_engine: str = "ooxml_fallback"  # default; overridden on success
+    extraction_confidence: float = 0.0
+
     # Metrics
     token_coverage_ratio: Optional[float] = None
     mean_cell_confidence: Optional[float] = None
@@ -113,6 +117,8 @@ class RenderFirstExtractionResult:
             "failure_reason_code": self.failure_reason_code,
             "rows": self.rows,
             "cols": self.cols,
+            "extraction_engine": self.extraction_engine,
+            "extraction_confidence": self.extraction_confidence,
         }
 
 
@@ -219,7 +225,10 @@ class RenderFirstTableExtractor:
             if image is None:
                 result.failure_reason_code = "RENDER_FIRST_CONVERSION_FAILED"
                 result.rejection_reason = error
-                logger.warning("Render-first conversion failed: %s", error)
+                # Ticket 1: Structured warning on fallback
+                logger.warning(
+                    "EXTRACTION_FALLBACK: engine=ooxml_fallback reason=%s", error
+                )
                 return result
 
             # Step 4: Detect structure
@@ -277,6 +286,10 @@ class RenderFirstTableExtractor:
             result.failure_reason_code = failure_reason
             result.rows = structure_result.num_rows
             result.cols = structure_result.num_cols
+
+            # Ticket 1: Set extraction quality metadata on success
+            result.extraction_engine = "render_first"
+            result.extraction_confidence = quality_score
 
             # Set metrics
             result.token_coverage_ratio = metrics.token_coverage_ratio
