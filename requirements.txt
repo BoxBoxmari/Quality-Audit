@@ -1,22 +1,14 @@
-# Core dependencies (required for main flow: OOXML/python-docx -> validate -> Excel)
-pandas>=2.0.0
-numpy>=2.0.0
-openpyxl>=3.1.0
-python-docx>=1.1.0
+pandas>=1.5.0
+numpy>=1.23.0
 
-lxml>=5.1.0  # High-performance XML parsing for docx/openpyxl
+openpyxl>=3.0.0
+python-docx>=0.8.11
 
-# Render-first table extraction (DOCX -> PDF -> Image -> OCR -> Grid)
-# Required:
 Pillow>=10.0.0
 opencv-python>=4.9.0
 pytesseract>=0.3.10
-PyMuPDF>=1.24.0  # fitz - PDF rendering
-pdf2image>=1.17.0  # Alternative PDF renderer (requires poppler)
+PyMuPDF>=1.24.0
+pdf2image>=1.17.0
 
-# Development and Quality Assurance
-pytest>=8.0.0
-ruff>=0.3.0     # Modern linter/formatter (replaces flake8, isort)
-black>=24.0.0   # Matches ruff-compatible formatting
-mypy>=1.10.0
-python-Levenshtein>=0.25.0  # For CER evaluation
+# ── Install timm ──────────────────────────────────────────────────────────────
+timm

@@ -18,6 +18,7 @@ from ...config.constants import (
     STATUS_CATEGORY_FAIL_TOOL_LOGIC,
     STATUS_CATEGORY_INFO_SKIPPED,
     STATUS_CATEGORY_PASS,
+    STATUS_CATEGORY_WARN,
     TABLES_NEED_CHECK_SEPARATELY,
     TOTALS_GUARDRAIL_NUMERIC_BELOW,
     TOTALS_LEGACY_BOTTOM_N,
@@ -267,7 +268,9 @@ class ValidationResult:
             return STATUS_CATEGORY_FAIL_TOOL_EXTRACT, failure_reason_code
         if rule_id in FAIL_TOOL_LOGIC_RULE_IDS or status_enum == "FAIL_TOOL_LOGIC":
             return STATUS_CATEGORY_FAIL_TOOL_LOGIC, failure_reason_code
-        if status_enum in ("FAIL", "WARN", "ERROR"):
+        if status_enum == "WARN":
+            return STATUS_CATEGORY_WARN, failure_reason_code
+        if status_enum in ("FAIL", "ERROR"):
             return STATUS_CATEGORY_FAIL_DATA, failure_reason_code
         if status_enum == "INFO":
             return STATUS_CATEGORY_INFO_SKIPPED, failure_reason_code

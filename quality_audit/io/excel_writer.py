@@ -868,11 +868,14 @@ class ExcelWriter:
         ws.column_dimensions["K"].hidden = True
 
         # Filter findings (FAIL/WARN and tool/data statuses)
+        # Exclude LOW confidence / LOW severity results from the Focus List
         findings = [
             r
             for r in results
             if r.get("status_enum")
             in ["FAIL", "WARN", "FAIL_TOOL_EXTRACT", "FAIL_TOOL_LOGIC", "FAIL_DATA"]
+            and r.get("confidence", "MEDIUM") != "LOW"
+            and r.get("severity", "MEDIUM") != "LOW"
         ]
 
         # Sort by severity (HIGH > MEDIUM > LOW)

@@ -11,10 +11,14 @@ import logging
 
 from .balance_sheet_rules import BalanceSheetRules
 from .base_rule import AuditRule
+from .basic_numeric_checks import BasicNumericChecksRule
 from .breakdown_rules import BreakdownRules
 from .cash_flow_rules import CashFlowRules
 from .income_statement_rules import IncomeStatementRules
+from .movement_by_columns import MovementByColumnsRule
 from .movement_rules import MovementRules
+from .netting_blocks import NettingBlocksRule
+from .scoped_vertical_sum import ScopedVerticalSumRule
 
 logger = logging.getLogger(__name__)
 
@@ -82,3 +86,12 @@ default_registry.register("GENERIC_NOTE", MovementRules)
 default_registry.register("FS_EQUITY", MovementRules)
 default_registry.register("GENERIC_NOTE", BreakdownRules)
 default_registry.register("TAX_NOTE", BreakdownRules)
+default_registry.register("GENERIC_NOTE", ScopedVerticalSumRule)
+default_registry.register("TAX_NOTE", ScopedVerticalSumRule)
+default_registry.register("GENERIC_NOTE", MovementByColumnsRule)
+default_registry.register("GENERIC_NOTE", NettingBlocksRule)
+default_registry.register("TAX_NOTE", NettingBlocksRule)
+
+# P1: Fallback numeric checks for NOTE tables
+default_registry.register("GENERIC_NOTE", BasicNumericChecksRule)
+default_registry.register("TAX_NOTE", BasicNumericChecksRule)

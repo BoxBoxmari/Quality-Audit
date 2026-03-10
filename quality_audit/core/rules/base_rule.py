@@ -51,6 +51,7 @@ class AuditRule(ABC):
         table_id: str | None = None,
         code_col: str | None = None,
         amount_cols: list[str] | None = None,
+        **kwargs: Any,
     ) -> list[ValidationEvidence]:
         """Run assertions against the table and return evidence."""
         ...

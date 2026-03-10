@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import logging
 
+import pandas as pd
+
 from quality_audit.core.evidence import Severity, ValidationEvidence
 from quality_audit.core.materiality import MaterialityEngine
 from quality_audit.core.model.financial_model import FinancialModel
@@ -105,9 +107,63 @@ class ReconciliationEngine:
                 )
         return results
 
+    def _is_note_4_cash(self, table_id: str, heading: str) -> bool:
+        """True if table_id or heading suggest Note 4 Cash (cash/tiền and 4)."""
+        tid = (table_id or "").strip().lower()
+        h = (heading or "").strip().lower()
+        has_4 = "4" in (table_id or "") or "4" in (heading or "")
+        has_cash = "cash" in h or "tiền" in h or "cash" in tid
+        return bool(has_4 and has_cash)
+
     def _reconcile_notes_to_fs(self, model: FinancialModel) -> list[ValidationEvidence]:
-        """Verify Note breakdown totals match parent FS line items."""
-        # Generic placeholder for reconciling note totals to FS.
-        # e.g., if a NOTE table has code "110", match it to FS_BALANCE_SHEET "110".
+        """Verify Note 4 Cash total ties to BS Cash (code 110)."""
         results = []
+        for note in model.notes:
+            table_id = note.get("table_id") or ""
+            heading = note.get("heading") or ""
+            if not self._is_note_4_cash(table_id, heading):
+                continue
+            df = note.get("df")
+            amount_cols = note.get("amount_cols") or []
+            if df is None or not amount_cols:
+                continue
+            col = amount_cols[0]
+            if col not in df.columns:
+                continue
+            try:
+                note_total = float(pd.to_numeric(df[col], errors="coerce").sum())
+            except (TypeError, ValueError):
+                continue
+            if pd.isna(note_total):
+                continue
+            bs_cash = model.get_line_item("FS_BALANCE_SHEET", "110", col_idx=0)
+            if bs_cash is None:
+                continue
+            magnitude = max(abs(note_total), abs(bs_cash))
+            tolerance = self.materiality.compute(magnitude, "RECONCILIATION")
+            variance = abs(note_total - bs_cash)
+            assertion = "Note 4 Cash total ties to BS Cash (110)"
+            if variance <= tolerance:
+                results.append(
+                    ValidationEvidence.pass_evidence(
+                        rule_id="RECON_NOTE_4_CASH_VS_BS",
+                        assertion_text=assertion,
+                        expected=bs_cash,
+                        actual=note_total,
+                        tolerance=tolerance,
+                        table_id=table_id or None,
+                    )
+                )
+            else:
+                results.append(
+                    ValidationEvidence.fail_evidence(
+                        rule_id="RECON_NOTE_4_CASH_VS_BS",
+                        assertion_text=assertion,
+                        expected=bs_cash,
+                        actual=note_total,
+                        tolerance=tolerance,
+                        severity=Severity.MAJOR,
+                        table_id=table_id or None,
+                    )
+                )
         return results

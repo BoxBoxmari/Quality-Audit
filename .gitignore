@@ -29,6 +29,9 @@ log.txt
 test_out.txt
 debug_*.txt
 scripts/analysis_output.txt
+run_t1_t6_out.txt
+scripts/22_issues_evidence.json
+scripts/kpi_baseline_*.json
 
 # GUI settings (user-specific)
 .quality_audit_gui.json
@@ -42,4 +45,5 @@ scripts/analysis_output.txt
 .cursor/
 
 # OpenMemory - IDE/Assistant specific rules
+.cursor\rules\openmemory.mdc
 .cursor\rules\openmemory.mdc

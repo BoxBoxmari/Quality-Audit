@@ -9,7 +9,7 @@ Quality Audit is a modular Python application for validating financial statement
 - **`quality_audit/`** – Main package (UI, services, core, io, utils, config).
 - **`main.py`**, **`quality_audit/cli.py`** – Entry points; **`run_gui.bat`** – GUI launcher.
 - **`docs/`** – Architecture, API, security, audit reports, task and feature docs.
-- **`scripts/`** – One-off and debug scripts (extract, verify, debug_equity_no_evidence); see `scripts/README.md`.
+- **`scripts/`** – One-off and utility scripts (extract, verify, analysis); see `scripts/README.md`.
 - **`tests/`** – Unit, integration, regression tests; **`tests/conftest.py`**, **`tests/fixtures/`**, **`tests/integration/`**, **`tests/io/`**, **`tests/regression/`**, **`tests/core/`**.
 - **`reports/`** – Generated or hand-written report artifacts (e.g. shortlist, verification).
 - **`legacy/`** – Legacy script **`Quality Audit.py`**.

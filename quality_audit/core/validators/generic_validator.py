@@ -345,7 +345,10 @@ class GenericTableValidator(BaseValidator):
         Spine 3: When table is all non-numeric, use 2-phase classifier; only skip when
         footer/signature evidence is strong and financial-table evidence is weak.
         """
-        if heading_lower in TABLES_WITHOUT_TOTAL:
+        # Patch E: case-insensitive match for TABLES_WITHOUT_TOTAL
+        if heading_lower in TABLES_WITHOUT_TOTAL or any(
+            heading_lower == t.lower() for t in TABLES_WITHOUT_TOTAL
+        ):
             return True
 
         subset = df.iloc[0:]

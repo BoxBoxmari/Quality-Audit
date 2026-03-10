@@ -117,6 +117,12 @@ Examples:
     logging.getLogger("quality_audit").setLevel(log_level)
 
     try:
+        from quality_audit import BUILD_STAMP
+
+        print(f"Quality Audit BUILD_STAMP={BUILD_STAMP}")
+        logger_root = logging.getLogger("quality_audit")
+        logger_root.info("BUILD_STAMP=%s", BUILD_STAMP)
+
         # Validate input path
         input_path = Path(args.input_path)
         if not input_path.exists():

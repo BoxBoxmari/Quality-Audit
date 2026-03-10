@@ -9,6 +9,7 @@ from .income_statement_rules import IncomeStatementRules
 from .movement_equation import MovementEquationRule
 from .movement_rules import MovementRules
 from .rule_registry import RuleRegistry
+from .scoped_vertical_sum import ScopedVerticalSumRule
 from .sum_within_tolerance import SumWithinToleranceRule
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "BalanceSheetRules",
     "MovementRules",
     "BreakdownRules",
+    "ScopedVerticalSumRule",
 ]

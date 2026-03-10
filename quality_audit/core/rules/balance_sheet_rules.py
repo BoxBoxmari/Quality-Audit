@@ -55,6 +55,38 @@ class BalanceSheetRules(AuditRule):
         if not code_col or not amount_cols or code_col not in df.columns:
             return evidence_list
 
+        # Run FS Routing Sanity check by building a temporary StatementModel
+        from quality_audit.core.model.statement_model_builder import (
+            StatementModelBuilder,
+        )
+
+        temp_model = StatementModelBuilder().build(
+            [
+                {
+                    "df": df,
+                    "table_id": table_id,
+                    "table_type": table_type,
+                    "code_col": code_col,
+                    "amount_cols": amount_cols,
+                }
+            ],
+            table_type,
+        )
+        if temp_model.is_narrative_statement:
+            from quality_audit.core.evidence.validation_evidence import (
+                ValidationEvidence,
+            )
+
+            return [
+                ValidationEvidence.warn_evidence(
+                    rule_id=self.rule_id,
+                    assertion_text="Balance Sheet Code Pattern Sanity Check (Narrative)",
+                    reason_code="ROUTE_CORRECTION",
+                    table_type=table_type,
+                    table_id=table_id or "",
+                )._apply_route_correction_metadata()
+            ]
+
         code_to_idx: dict[str, int] = {}
         for idx, row in df.iterrows():
             code_val = str(row[code_col]).strip()

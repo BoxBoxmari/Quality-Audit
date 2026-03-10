@@ -69,6 +69,14 @@ class ValidationEvidence:
             **self.metadata,
         }
 
+    def _apply_route_correction_metadata(self) -> ValidationEvidence:
+        """Helper to append ROUTE_CORRECTION status to this evidence metadata.
+        Used when FS rules skip narrative-style note tables.
+        """
+        self.metadata["reason_code"] = "ROUTE_CORRECTION"
+        self.metadata["review_required"] = True
+        return self
+
     @classmethod
     def pass_evidence(
         cls,
@@ -136,4 +144,46 @@ class ValidationEvidence:
             table_type=table_type,
             table_id=table_id,
             metadata=metadata or {},
+        )
+
+    @classmethod
+    def warn_evidence(
+        cls,
+        rule_id: str,
+        assertion_text: str,
+        *,
+        reason_code: str,
+        expected: float = 0.0,
+        actual: float = 0.0,
+        tolerance: float = 0.0,
+        confidence: float = 1.0,
+        source_rows: list[int] | None = None,
+        source_cols: list[str] | None = None,
+        table_type: str | None = None,
+        table_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> ValidationEvidence:
+        """Factory for a WARN assertion (ambiguity / review required).
+
+        Caller must set metadata.reason_code from WARN_REASON_* constants.
+        Status mapping uses reason_code to set status_enum to WARN.
+        """
+        meta = dict(metadata or {})
+        meta["reason_code"] = reason_code
+        meta["review_required"] = True
+        return cls(
+            rule_id=rule_id,
+            assertion_text=assertion_text,
+            expected=expected,
+            actual=actual,
+            diff=0.0,
+            tolerance=tolerance,
+            is_material=False,
+            severity=Severity.INFO,
+            confidence=confidence,
+            source_rows=source_rows or [],
+            source_cols=source_cols or [],
+            table_type=table_type,
+            table_id=table_id,
+            metadata=meta,
         )

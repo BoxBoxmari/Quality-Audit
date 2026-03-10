@@ -18,6 +18,12 @@ Feature flags are defined in `quality_audit/config/feature_flags.py` (dict `FEAT
 
 Used in `GenericTableValidator._detect_netting_structure()` to avoid missing structures when Total/Less/Net rows are more than 15 rows apart.
 
+## NOTE structure engine
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `note_structure_engine` | `True` | When `True`, NOTE tables (GENERIC_NOTE, TAX_NOTE, UNKNOWN numeric) use the NOTE structure analyzer (`analyze_note_table`) to detect label column, amount columns, row types, segments (OB/CB/movement), and scopes. Movement and scoped vertical sum rules then run with segment-aware logic. When `False`, the legacy path is used (last row as total, no segments). See `docs/NOTE_STRUCTURE_WARN_TAXONOMY.md` for WARN reason codes and manual review. |
+
 ## Other flags (summary)
 
 - **Extraction / normalization:** `heading_fallback_from_table_first_row`, `classifier_scan_expansion`, `skip_footer_signature_tables`, `generic_exclude_code_columns`, `multi_code_columns_exclusion`, `code_column_value_heuristic`, `strict_netting_structure`, `dedup_period_columns`, `robust_numeric_parsing`, `safe_total_row_selection`, `enable_canonicalize_validator`, `enable_canonicalize_writer`, `enable_merge_aware_extraction`, `heading_inference_v2`, `classifier_content_override`, `tax_routing_content_evidence`, `extractor_usable_v2`, `extraction_fallback_prefer_advanced_before_legacy`, `extraction_render_first_triggered_mode`.

@@ -296,19 +296,27 @@ class StructuralFingerprinter:
             if _MOVEMENT_PATTERNS.search(row_text):
                 fp.movement_row_count += 1
 
-            # --- Code scanning (first 3 columns) ---
-            for j in range(min(3, len(table.columns))):
-                val = str(table.iloc[i, j]).strip()
+            # --- Code scanning (all columns — P2: no longer limited to first 3) ---
+            row_has_code = False
+            for j in range(len(table.columns)):
+                # P5: Normalize float codes (e.g. 21.0 → "21") before regex
+                raw = table.iloc[i, j]
+                if isinstance(raw, float) and not pd.isna(raw) and raw == int(raw):
+                    val = str(int(raw))
+                else:
+                    val = str(raw).strip()
                 m = self._CODE_RE.match(val)
                 if m:
                     digits = self._CODE_DIGITS_RE.match(val)
                     if digits:
                         fp.found_codes.add(digits.group(1))
-                    code_rows += 1
+                    row_has_code = True
                     break
                 elif self._ROMAN_RE.match(val):
-                    code_rows += 1
+                    row_has_code = True
                     break
+            if row_has_code:
+                code_rows += 1
 
         fp.code_density = code_rows / scan_rows if scan_rows > 0 else 0.0
 

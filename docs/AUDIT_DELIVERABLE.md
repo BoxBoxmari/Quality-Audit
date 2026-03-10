@@ -3,7 +3,7 @@
 **Repository:** `c:\Users\Admin\Downloads\Quality Audit (1)\Quality Audit`  
 **Scope:** Lint/type pipeline (Black, Ruff, flake8, mypy), security/performance scan, docs/scripts review, reorganization. **pytest was NOT run.**
 
-*Moved to `docs/` for consolidation. All root scripts (extract_gold_set, verify_p0_columns, debug_equity_no_evidence) now in `scripts/`. Task/audit docs in `docs/`.*
+*Moved to `docs/` for consolidation. Root scripts (extract_gold_set, verify_p0_columns, etc.) live in `scripts/`. Task/audit docs in `docs/`.*
 
 ---
 
@@ -66,7 +66,7 @@
 
 ## Structure
 
-- All runnable scripts in `scripts/` (extract_gold_set, verify_p0_columns, debug_equity_no_evidence, run_regression_2docs, aggregate_failures, etc.); usage in `scripts/README.md`.
+- All runnable scripts in `scripts/` (extract_gold_set, verify_p0_columns, run_regression_2docs, aggregate_failures, etc.); usage in `scripts/README.md`.
 - Task and audit docs in `docs/` (TASK.md, AUDIT_REPORT_PYTHON_MAINTENANCE.md, AUDIT_DELIVERABLE.md). Root keeps main.py, README.md, CHANGELOG.md, openmemory.md.
 
 ---
@@ -76,7 +76,7 @@
 ## Lint / format
 
 - **Black:** Ran `python -m black .`; 25 files reformatted (per prior run).
-- **Ruff:** Ran `ruff check . --fix`; 18 issues auto-fixed. Added `# noqa: E402` for intentional late imports in `scripts/debug_equity_no_evidence.py`, `scripts/analyze_no_match_cases.py`. Merged nested `if` (SIM102) in `scripts/comprehensive_fix_plan.py`.
+- **Ruff:** Ran `ruff check . --fix`; 18 issues auto-fixed. Added `# noqa: E402` for intentional late imports in `scripts/analyze_no_match_cases.py`. Merged nested `if` (SIM102) in `scripts/comprehensive_fix_plan.py`.
 
 ## Mypy
 
@@ -117,7 +117,7 @@ No public API contracts changed except where required for type correctness; all 
 | docs/IMPLEMENTATION_PLAN_WARN_TAXONOMY_TRACEABILITY.md | KEEP | Plan doc. |
 | quality_audit/ui/reference.md, BRAND_KPMG.md | KEEP | UI/brand reference. |
 
-**Edits (if performed):** In README, ensure "Utility Scripts" points to `scripts/` and to `scripts/extract_gold_set.py`, `scripts/verify_p0_columns.py`, `scripts/debug_equity_no_evidence.py`. In docs/ARCHITECTURE.md, ensure diagram and folder list match current tree. In docs/API.md, ensure examples use current imports and CLI (e.g. `python main.py`, `python scripts/...`).
+**Edits (if performed):** In README, ensure "Utility Scripts" points to `scripts/` and to `scripts/extract_gold_set.py`, `scripts/verify_p0_columns.py`. In docs/ARCHITECTURE.md, ensure diagram and folder list match current tree. In docs/API.md, ensure examples use current imports and CLI (e.g. `python main.py`, `python scripts/...`).
 
 ---
 
@@ -140,7 +140,6 @@ No public API contracts changed except where required for type correctness; all 
 | scripts/analyze_22_issues.py, analyze_evidence_pack*.py, extract_evidence_details.py, shortlist_fail_info.py | KEEP | Diagnostic set; validate entrypoints/args in script. |
 | scripts/extract_gold_set.py | KEEP | Documented in scripts/README. |
 | scripts/verify_p0_columns.py | KEEP | Same. |
-| scripts/debug_equity_no_evidence.py | KEEP | Debug script; documented in scripts/README. |
 
 **Validation:** All scripts use file paths/args from argv or env; no hardcoded secrets. scripts/README documents all scripts under scripts/.
 
@@ -165,7 +164,6 @@ No public API contracts changed except where required for type correctness; all 
 |------|----|-----------|
 | extract_gold_set.py | scripts/extract_gold_set.py | Single place for utilities. |
 | verify_p0_columns.py | scripts/verify_p0_columns.py | Same. |
-| debug_equity_no_evidence.py | scripts/debug_equity_no_evidence.py | Same. |
 | TASK.md | docs/TASK.md | Consolidate docs. |
 | AUDIT_REPORT_PYTHON_MAINTENANCE.md | docs/AUDIT_REPORT_PYTHON_MAINTENANCE.md | Same. |
 | AUDIT_DELIVERABLE.md | docs/AUDIT_DELIVERABLE.md | Same. |
@@ -194,4 +192,4 @@ Run in repo root. **Do not run pytest.**
    `python -m mypy quality_audit main.py`  
    Expect: exit 0; "Success: no issues found in 65 source files" (notes about untyped function bodies are acceptable).
 
-**Self-check:** pytest was not run. All four commands above must pass after any final edits. Run one invocation each to confirm scripts: e.g. `python scripts/extract_gold_set.py --help`, `python scripts/verify_p0_columns.py`, `python scripts/debug_equity_no_evidence.py`.
+**Self-check:** pytest was not run. All four commands above must pass after any final edits. Run one invocation each to confirm scripts: e.g. `python scripts/extract_gold_set.py --help`, `python scripts/verify_p0_columns.py`.

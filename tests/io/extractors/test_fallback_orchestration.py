@@ -91,15 +91,23 @@ def test_render_first_triggered_before_python_docx_on_low_quality(sample_word_pa
                 MockRenderFirstResult()
             )
             with patch(
-                "quality_audit.config.feature_flags.get_feature_flags",
+                "quality_audit.io.word_reader.get_feature_flags",
                 return_value={
                     "extraction_fallback_prefer_advanced_before_legacy": True,
-                    "extraction_render_first_triggered_mode": "signals_only",
+                    "extraction_render_first_triggered_mode": "signals_only",  # P1: explicit override for test
+                    "heading_inference_v2": True,
+                    "heading_fallback_from_table_first_row": True,
                 },
             ):
-                grid, meta = reader._extract_table_with_fallback(
-                    sample_word_path, 0, table
-                )
+                # P0: Mock OCR engine as available so render-first gate passes
+                mock_ocr = type("MockOCR", (), {"is_available": lambda self: True})()
+                with patch(
+                    "quality_audit.io.extractors.ocr.get_best_ocr_engine",
+                    return_value=mock_ocr,
+                ):
+                    grid, meta = reader._extract_table_with_fallback(
+                        sample_word_path, 0, table
+                    )
     assert "engine_attempts" in meta
     assert "ooxml" in meta["engine_attempts"]
     assert "render_first" in meta["engine_attempts"]

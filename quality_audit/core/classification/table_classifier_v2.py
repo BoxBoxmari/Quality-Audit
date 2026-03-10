@@ -92,13 +92,11 @@ _NEGATIVE_STATEMENT_KEYWORDS = [
     "ngoài bảng",
     "approved but not provided",
     "policy",
+    "policies",  # e.g. "Significant accounting policies"
     "accounting policy",
     "chính sách",
     "is recognised",
     "được ghi nhận",
-    "details of",
-    "chi tiết",
-    "schedule of",
 ]
 
 _EXCLUSIVE_OF_VAT_RE = re.compile(r"exclusive\s+of\s+vat", re.I)
@@ -220,9 +218,9 @@ class TableClassifierV2:
 
         # --- Aggregate votes ---
         if not signals:
-            table_type = TableType.GENERIC_NOTE
-            confidence = 0.5
-            reasons = ["No signals matched — fallback"]
+            table_type = TableType.UNKNOWN
+            confidence = 0.0
+            reasons = ["No signals matched — unclassified (not assumed note)"]
         else:
             vote_totals: dict[TableType, float] = {}
             for sig in signals:
@@ -254,14 +252,23 @@ class TableClassifierV2:
         if is_note_by_keyword and table_type not in (
             TableType.GENERIC_NOTE,
             TableType.TAX_NOTE,
-            TableType.UNKNOWN,
         ):
-            # Only override if structure signal is not very strong
-            structure_score = sum(s.score for s in signals if s.source == "structure")
-            if structure_score < 0.6:
+            if table_type == TableType.UNKNOWN:
+                # No signals but heading says note (e.g. "Significant accounting policies")
                 table_type = TableType.GENERIC_NOTE
                 confidence = 0.75
-                reasons.append("Negative keyword override → GENERIC_NOTE")
+                reasons.append(
+                    "Note keyword in heading (no other signals) → GENERIC_NOTE"
+                )
+            else:
+                # Override non-note type only if structure signal is not very strong
+                structure_score = sum(
+                    s.score for s in signals if s.source == "structure"
+                )
+                if structure_score < 0.6:
+                    table_type = TableType.GENERIC_NOTE
+                    confidence = 0.75
+                    reasons.append("Negative keyword override → GENERIC_NOTE")
 
         ctx: dict[str, Any] = {
             "scan_rows": fingerprint.scan_rows,
@@ -309,6 +316,9 @@ class TableClassifierV2:
         if fp.bs_code_matches >= self.MIN_CODE_MATCHES_BS:
             score = min(1.0, 0.3 + fp.bs_code_matches * 0.1)
             signals.append(_Signal(TableType.FS_BALANCE_SHEET, score, "structure"))
+        elif fp.bs_code_matches >= 2:
+            # Weak BS signal so FS wins over movement when table has 2 BS codes
+            signals.append(_Signal(TableType.FS_BALANCE_SHEET, 0.85, "structure"))
         elif (
             "assets" in fp.keywords_found
             and "liabilities" in fp.keywords_found
@@ -328,6 +338,12 @@ class TableClassifierV2:
             if fp.cf_exclusive_matches >= 1:
                 score *= 0.5  # Penalize if strong CF signals exist
             signals.append(_Signal(TableType.FS_INCOME_STATEMENT, score, "structure"))
+        elif fp.is_code_matches >= 2 and fp.cf_exclusive_matches == 0:
+            # P3: Only IS fallback when NO CF-exclusive codes present
+            score = 0.85
+            if fp.cf_code_matches >= fp.is_code_matches:
+                score *= 0.4  # Heavy penalty: CF codes dominate
+            signals.append(_Signal(TableType.FS_INCOME_STATEMENT, score, "structure"))
 
         # Cash Flow: need CF codes + cash/flows keywords or CF exclusives
         if fp.cf_code_matches >= self.MIN_CODE_MATCHES_CF and (
@@ -339,9 +355,27 @@ class TableClassifierV2:
             if fp.is_exclusive_matches >= 1:
                 score *= 0.5  # Penalize if strong IS signals exist
             signals.append(_Signal(TableType.FS_CASH_FLOW, score, "structure"))
+        elif fp.cf_code_matches >= 2 and fp.is_exclusive_matches == 0:
+            # P3: Only CF fallback when NO IS-exclusive codes present
+            score = 0.85
+            if fp.is_code_matches >= fp.cf_code_matches:
+                score *= 0.4  # Heavy penalty: IS codes dominate
+            signals.append(_Signal(TableType.FS_CASH_FLOW, score, "structure"))
 
         # Equity: heading-only (rare structural signals)
         if "equity" in fp.keywords_found and fp.has_movement_structure:
             signals.append(_Signal(TableType.FS_EQUITY, 0.5, "structure"))
+
+        # P3: Diagnostic logging for IS/CF disambiguation
+        logger.debug(
+            "fingerprint: is_codes=%d cf_codes=%d is_excl=%d cf_excl=%d "
+            "signals=%s found_codes=%s",
+            fp.is_code_matches,
+            fp.cf_code_matches,
+            fp.is_exclusive_matches,
+            fp.cf_exclusive_matches,
+            [(s.table_type.value, round(s.score, 3)) for s in signals],
+            sorted(fp.found_codes),
+        )
 
         return signals

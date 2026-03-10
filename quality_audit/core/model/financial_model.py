@@ -20,6 +20,7 @@ class FinancialModel:
     cash_flows: list[dict[str, Any]] = field(default_factory=list)
     equity_changes: list[dict[str, Any]] = field(default_factory=list)
     notes: list[dict[str, Any]] = field(default_factory=list)
+    fs_anchor_index: list[dict[str, Any]] = field(default_factory=list)
 
     def add_table(self, table_info: dict[str, Any]) -> None:
         """

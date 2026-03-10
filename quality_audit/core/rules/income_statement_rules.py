@@ -49,6 +49,24 @@ class IncomeStatementRules(AuditRule):
             return evidence_list
 
         table_type = model.statement_type
+
+        # Check for misrouted narrative tables (FS Routing Sanity check)
+        if model.is_narrative_statement:
+            table_id = model.rows[0].table_id if model.rows else ""
+            from quality_audit.core.evidence.validation_evidence import (
+                ValidationEvidence,
+            )
+
+            return [
+                ValidationEvidence.warn_evidence(
+                    rule_id=self.rule_id,
+                    assertion_text="Income Statement Code Pattern Sanity Check (Narrative)",
+                    reason_code="ROUTE_CORRECTION",
+                    table_type=table_type,
+                    table_id=table_id,
+                )._apply_route_correction_metadata()
+            ]
+
         # Collect amount_cols from any row which has them
         amount_cols = set()
         for r in model.rows:

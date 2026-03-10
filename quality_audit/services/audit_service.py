@@ -9,7 +9,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from ..config.constants import TABLES_WITHOUT_TOTAL
+from ..config.constants import (
+    TABLES_WITHOUT_TOTAL,
+    WARN_REASON_CODES,
+)
 from ..config.feature_flags import get_feature_flags
 from ..core.cache_manager import AuditContext, LRUCacheManager, cross_check_marks
 from ..core.exceptions import FileProcessingError, SecurityError, ValidationError
@@ -19,6 +22,7 @@ from ..core.validators.factory import ValidatorFactory
 from ..io import ExcelWriter, FileHandler
 from ..io.word_reader import AsyncWordReader, WordReader
 from ..utils.column_detector import ColumnDetector
+from ..utils.note_structure import analyze_note_table
 from ..utils.numeric_utils import parse_numeric
 from ..utils.skip_classifier import classify_footer_signature
 from ..utils.table_normalizer import TableNormalizer
@@ -143,7 +147,6 @@ class AuditService(BaseService):
                 "output_path": None,
             }
         except Exception as e:
-            # Wrap unknown exceptions
             return {
                 "success": False,
                 "error": f"Unexpected error during audit: {str(e)}",
@@ -371,6 +374,15 @@ class AuditService(BaseService):
                 "dedup_conflicts_count": len(norm_meta.get("dedup_conflicts", [])),
                 "suspicious_wide_table": norm_meta.get("suspicious_wide_table"),
                 "misalignment_suspected": norm_meta.get("misalignment_suspected"),
+                # P0: NOTE structure observability and WARN reason_code
+                "label_col": result.context.get("label_col"),
+                "amount_cols": result.context.get("amount_cols"),
+                "segments_count": result.context.get("segments_count"),
+                "structure_confidence": result.context.get("structure_confidence"),
+                "row_type_counts": result.context.get("row_type_counts"),
+                "reason_code": result.context.get("reason_code")
+                if validation_status == "WARN"
+                else None,
             }
             logger.info("Table observability: %s", observability_payload)
 
@@ -491,6 +503,23 @@ class AuditService(BaseService):
                 amount_cols.append(cur_col)
             if prior_col:
                 amount_cols.append(prior_col)
+            # T2: Fallback for note tables without year/current|prior in header
+            if (
+                not amount_cols
+                and table_type_str in ("GENERIC_NOTE", "TAX_NOTE")
+                and hasattr(table, "columns")
+                and len(table.columns) >= 2
+            ):
+                amount_cols = list(table.columns)[-2:]
+            # T6: Fallback for FS tables (IS/BS/CF) when column detector returns none
+            if (
+                not amount_cols
+                and table_type_str
+                in ("FS_INCOME_STATEMENT", "FS_BALANCE_SHEET", "FS_CASH_FLOW")
+                and hasattr(table, "columns")
+                and len(table.columns) >= 2
+            ):
+                amount_cols = list(table.columns)[-2:]
 
             safe_heading = re.sub(r"[^A-Za-z0-9]", "_", heading or "unknown")
             slug = safe_heading[:50].strip("_") or "unnamed"
@@ -546,17 +575,189 @@ class AuditService(BaseService):
                 t_info["inferred_note_ref"] = ""
 
         for t_info in tables_info:
-            if t_info.get("table_type") in ("GENERIC_NOTE", "TAX_NOTE") and t_info.get(
-                "amount_cols"
+            t_info["is_numeric_table"] = t_info.get("table_type") in (
+                "GENERIC_NOTE",
+                "TAX_NOTE",
+            ) and bool(t_info.get("amount_cols"))
+
+        # P4: Relax NOTE typing — reclassify UNKNOWN to GENERIC_NOTE when numeric + label density high
+        _segment_confidence_threshold = 0.4
+        _flags = get_feature_flags()
+        _note_structure_enabled = _flags.get("note_structure_engine", False)
+
+        for t_info in tables_info:
+            if t_info.get("table_type") != "UNKNOWN":
+                continue
+            df_t = t_info["df"]
+            n = len(df_t)
+            if n < 2:
+                continue
+            try:
+                heading = t_info.get("heading") or ""
+                table_id = t_info.get("table_id") or ""
+                result = analyze_note_table(df_t, heading, table_id)
+                # P4: Relax NOTE typing — any UNKNOWN table where the NOTE
+                # structure engine can identify numeric amount columns is
+                # treated as a GENERIC_NOTE, regardless of confidence score.
+                if result.amount_cols:  # A4: require numeric cols, not just label
+                    t_info["table_type"] = "GENERIC_NOTE"
+                    t_info["amount_cols"] = result.amount_cols or []
+                    t_info["is_numeric_table"] = bool(t_info.get("amount_cols"))
+                    t_info["_note_structure_result"] = result
+                    t_info["inferred_note_ref"] = infer_note_ref_for_table(
+                        t_info, model.fs_anchor_index
+                    )
+                    logger.info(
+                        "[Big4] P4 reclassified UNKNOWN %s to GENERIC_NOTE (confidence=%.2f)",
+                        table_id,
+                        result.confidence,
+                    )
+            except Exception as e:
+                logger.debug(
+                    "note_structure (UNKNOWN probe) failed for %s: %s",
+                    t_info.get("table_id"),
+                    e,
+                )
+
+        # Additional safety net: any remaining UNKNOWN tables that already have
+        # numeric amount columns from the column detector are treated as
+        # GENERIC_NOTE so they at least receive basic numeric checks instead of
+        # being silently unvalidated.
+        for t_info in tables_info:
+            if t_info.get("table_type") != "UNKNOWN":
+                continue
+            if not t_info.get("amount_cols"):
+                continue
+            heading = (t_info.get("heading") or "").strip().upper()
+            if heading == "SKIPPED_FOOTER_SIGNATURE":
+                continue
+            table_id = t_info.get("table_id")
+            t_info["table_type"] = "GENERIC_NOTE"
+            t_info["is_numeric_table"] = True
+            logger.info(
+                "[Big4] P4 fallback reclassified UNKNOWN %s to GENERIC_NOTE based on numeric columns",
+                table_id,
+            )
+
+        # P1-FIX: Re-add reclassified UNKNOWN→NOTE tables to model.notes.
+        # model.add_table() was called at classification time (before P4
+        # reclassification), so these tables ended up in the "unknown" bucket
+        # and were never validated.  We must explicitly add them now.
+        for t_info in tables_info:
+            if (
+                t_info.get("table_type") in ("GENERIC_NOTE", "TAX_NOTE")
+                and t_info not in model.notes
             ):
-                df_t = t_info["df"]
-                n = len(df_t)
-                if n >= 2:
-                    t_info["total_row_idx"] = n - 1
-                    t_info["detail_rows"] = list(range(0, n - 1))
-                else:
+                model.notes.append(t_info)
+
+        # NOTE structure engine: analyze NOTE tables when enabled; otherwise use blind total/detail
+        for t_info in tables_info:
+            if not t_info.get("is_numeric_table"):
+                continue
+            df_t = t_info["df"]
+            n = len(df_t)
+            table_type_str = t_info.get("table_type")
+            use_structure = (
+                _note_structure_enabled
+                and table_type_str in ("GENERIC_NOTE", "TAX_NOTE")
+                and n >= 2
+            )
+            if use_structure:
+                try:
+                    result = t_info.pop("_note_structure_result", None)
+                    if result is None:
+                        heading = t_info.get("heading") or ""
+                        table_id = t_info.get("table_id") or ""
+                        result = analyze_note_table(df_t, heading, table_id)
+                    t_info["label_col"] = result.label_col
+                    # P6: analyzer amount_cols is single source — never fallback to ColumnDetector
+                    t_info["amount_cols"] = (
+                        result.amount_cols if result.amount_cols else []
+                    )
+                    t_info["segments"] = result.segments
+                    t_info["scopes"] = result.scopes
+                    t_info["is_movement_table"] = result.is_movement_table
+                    # Phase 2: propagate richer NOTE semantics for downstream routing.
+                    t_info["note_structure_confidence"] = result.confidence
+                    t_info["note_structure_confidence_struct"] = (
+                        result.confidence_struct
+                    )
+                    t_info["note_structure_confidence_alignment"] = (
+                        result.confidence_alignment
+                    )
+                    t_info["note_mode"] = str(result.mode)
+                    t_info["structure_status"] = str(result.structure_status)
+                    t_info["note_validation_mode"] = str(result.validation_mode)
+                    t_info["heading_normalized"] = result.heading_normalized
+                    # Planner-provided scopes for scoped-total modes and listing
+                    # tables with implicit totals. These are consumed by
+                    # ScopedVerticalSumRule via eval_kwargs["scopes"].
+                    t_info["scopes"] = list(result.scopes)
+                    # Optional planner payload for specialised NOTE executors.
+                    if result.note_validation_plan:
+                        t_info["note_validation_plan"] = result.note_validation_plan
+                    # P7: Structured observability for NOTE
+                    logger.info(
+                        "[Big4-NOTE] tbl_%s label_col=%s amount_cols_count=%d "
+                        "confidence=%.2f segments=%d scopes=%d is_movement=%s "
+                        "mode=%s structure_status=%s",
+                        t_info.get("table_id", "???"),
+                        result.label_col,
+                        len(result.amount_cols),
+                        result.confidence,
+                        len(result.segments),
+                        len(result.scopes),
+                        result.is_movement_table,
+                        result.mode,
+                        result.structure_status,
+                    )
+                    undetermined = str(result.structure_status) == "STRUCTURE_UNDETERMINED"
+                    t_info["is_structure_undetermined"] = undetermined
+                    if (
+                        not undetermined
+                        and result.confidence >= _segment_confidence_threshold
+                        and (result.segments or result.scopes)
+                    ):
+                        t_info["total_row_idx"] = None
+                        t_info["detail_rows"] = []
+                        if result.scopes:
+                            first = result.scopes[0]
+                            t_info["total_row_idx"] = first.total_row_idx
+                            t_info["detail_rows"] = first.detail_rows
+                    else:
+                        # A5: Undetermined — do NOT set last-row as total
+                        # is_structure_undetermined=True will gate rules in validator
+                        t_info["total_row_idx"] = None
+                        t_info["detail_rows"] = []
+                except Exception as e:
+                    logger.warning(
+                        "note_structure analyze_note_table failed for %s: %s",
+                        t_info.get("table_id"),
+                        e,
+                    )
+                    t_info["is_structure_undetermined"] = True
+                    # A5: Do NOT default to last row on exception — keeps observability clean
                     t_info["total_row_idx"] = None
                     t_info["detail_rows"] = []
+            elif n >= 2:
+                heading_lower = (t_info.get("heading") or "").strip().lower()
+                # Patch 2 (P0): tables in TABLES_WITHOUT_TOTAL never get default total
+                if heading_lower in TABLES_WITHOUT_TOTAL:
+                    t_info["total_row_idx"] = None
+                    t_info["detail_rows"] = []
+                elif (
+                    table_type_str == "TAX_NOTE"
+                    and "reconciliation of effective tax rate" in heading_lower
+                    and n >= 3
+                ):
+                    t_info["total_row_idx"] = n - 1
+                    t_info["detail_rows"] = list(range(1, n - 1))
+                else:
+                    t_info["total_row_idx"] = n - 1
+                    t_info["detail_rows"] = list(range(0, n - 1))
+            else:
+                t_info["total_row_idx"] = None
+                t_info["detail_rows"] = []
 
         # 2. Execute orchestration engine
         all_evidence = auditor.validate_model(model)
@@ -589,6 +790,8 @@ class AuditService(BaseService):
             my_evidence = evidence_by_table[table_id]
 
             failed_ev = [e for e in my_evidence if e.is_material]
+            reason_code_for_context = None
+
             if failed_ev:
                 max_sev = max(failed_ev, key=lambda x: x.severity.value)
                 status_enum = "FAIL"
@@ -611,7 +814,7 @@ class AuditService(BaseService):
                 more = f" ... (+{len(issues) - 10} vấn đề)" if len(issues) > 10 else ""
                 status_str = f"{status_enum}: Big4 Engine - {len(failed_ev)} sai lệch. {preview}{more}"
             elif not my_evidence:
-                # Chỉ đánh dấu "không có assertions" cho bảng FS có quy tắc Big4
+                # Truly no evidence (non-numeric or FS tables without rules)
                 fs_types = (
                     "FS_BALANCE_SHEET",
                     "FS_INCOME_STATEMENT",
@@ -624,10 +827,10 @@ class AuditService(BaseService):
                     status_str = "INFO: Bảng không có assertions cụ thể (đã được gộp hoặc không có quy tắc)."
                 elif t_info["table_type"] in note_types:
                     status_enum = "INFO_SKIPPED"
-                    amount_cols = t_info.get("amount_cols") or []
-                    if amount_cols:
+                    if t_info.get("is_numeric_table"):
+                        # P1: Should not reach here — validator now emits UNVERIFIED
                         status_str = (
-                            "INFO: Bảng ghi chú số - chưa áp dụng quy tắc NOTE_SUM_TO_TOTAL / tie-out."
+                            "INFO: Bảng ghi chú số — không có evidence (unexpected)."
                         )
                     else:
                         status_str = (
@@ -639,8 +842,30 @@ class AuditService(BaseService):
                         "INFO: Bảng chưa phân loại hoặc không có assertions cụ thể."
                     )
             else:
-                status_enum = "PASS"
-                status_str = f"PASS: Big4 Engine - kiểm tra {len(my_evidence)} assertions KHỚP (0 sai lệch)"
+                # Central WARN mapping: only evidence that both carries a WARN
+                # reason_code and is explicitly marked review_required should
+                # escalate the table to WARN. Pure INFO/INFO_SKIPPED diagnostics
+                # (including SCOPES_NOT_PLANNED) must not produce WARN.
+                reason_codes = [
+                    e.metadata.get("reason_code")
+                    for e in my_evidence
+                    if e.metadata.get("reason_code") in WARN_REASON_CODES
+                ]
+                review_required = any(
+                    e.metadata.get("review_required") for e in my_evidence
+                )
+                if reason_codes and review_required:
+                    status_enum = "WARN"
+                    reason_code_for_context = reason_codes[0]
+                    status_str = "WARN: Big4 Engine - cần rà soát" + (
+                        f" (reason_code={reason_code_for_context})"
+                    )
+                else:
+                    status_enum = "PASS"
+                    status_str = (
+                        f"PASS: Big4 Engine - kiểm tra {len(my_evidence)} "
+                        "assertions KHỚP (0 sai lệch)"
+                    )
 
             import contextlib
 
@@ -703,10 +928,16 @@ class AuditService(BaseService):
 
             assertions_count = len(my_evidence)
 
+            rule_id = (
+                reason_code_for_context
+                if reason_code_for_context
+                else f"BIG4_{t_info['table_type']}"
+            )
+
             res = ValidationResult(
                 status=status_str,
                 marks=marks,
-                rule_id=f"BIG4_{t_info['table_type']}",
+                rule_id=rule_id,
                 status_enum=status_enum,
                 context={
                     "validator_type": "Big4Engine",
@@ -732,10 +963,18 @@ class AuditService(BaseService):
             res.context["heading_source"] = heading_source
             res.context["heading_confidence"] = heading_confidence
             res.context["assertions_count"] = assertions_count
+            if reason_code_for_context is not None:
+                res.context["reason_code"] = reason_code_for_context
+                res.context["failure_reason_code"] = reason_code_for_context
 
             res_dict = res.to_dict()
             # assertions_count must be top-level for TelemetryCollector.end_table()
             res_dict["assertions_count"] = assertions_count
+            res_dict["table_type"] = classifier_type
+            res_dict["heading"] = t_info["heading"]
+            res_dict["is_structure_undetermined"] = t_info.get(
+                "is_structure_undetermined", False
+            )
             results.append(res_dict)
 
             # FIX: restore per-table start time so end_table() doesn't skip tables.

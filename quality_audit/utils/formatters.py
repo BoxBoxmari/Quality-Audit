@@ -77,7 +77,10 @@ def apply_cell_marks(
         start_col: Column offset for positioning
     """
     for mark in marks:
-        r, c = _dfpos_to_excel(mark["row"], mark["col"])
+        row_idx, col_idx = mark.get("row"), mark.get("col")
+        if row_idx is None or col_idx is None:
+            continue
+        r, c = _dfpos_to_excel(row_idx, col_idx)
         cell = ws.cell(row=r + start_row, column=c + start_col)
 
         if mark.get("ok") is True:

@@ -239,6 +239,32 @@ class WordReader:
         if len(text_stripped) < 3:
             return True
         text_lower = text_stripped.lower()
+
+        # P1: Reject standalone schema-header tokens that are NOT real headings
+        _schema_tokens = {
+            "code",
+            "note",
+            "notes",
+            "unit",
+            "mã số",
+            "mã",
+            "ms",
+            "đơn vị",
+            "đơn vị tính",
+            "đvt",
+            "stt",
+            "tt",
+            "số",
+            "thuyết minh",
+            "ghi chú",
+        }
+        _currency_re = re.compile(
+            r"^(vnd|usd|eur|đồng|vnd'\d+|usd'\d+)$", re.IGNORECASE
+        )
+        if text_lower in _schema_tokens:
+            return True
+        if _currency_re.match(text_lower):
+            return True
         # Whitelist: known valid heading patterns are not junk
         valid_patterns = [
             r"balance sheet",
@@ -906,9 +932,17 @@ class WordReader:
                     )
                     fallback_success = False
                     try:
+                        from .extractors.ocr import get_best_ocr_engine
                         from .extractors.render_first_table_extractor import (
                             RenderFirstTableExtractor,
                         )
+
+                        ocr_engine = get_best_ocr_engine()
+                        if not ocr_engine.is_available():
+                            logger.debug(
+                                "render_first_disabled_no_ocr=true (numeric-empty fallback)"
+                            )
+                            raise RuntimeError("no_ocr_available")
 
                         rf = RenderFirstTableExtractor()
                         if rf.is_available():
@@ -1029,6 +1063,18 @@ class WordReader:
 
         _render_first_rejected_meta: Optional[Dict[str, Any]] = None
         if trigger_render_first:
+            # P0: Gate on OCR availability — render-first requires OCR
+            try:
+                from .extractors.ocr import get_best_ocr_engine as _get_ocr
+
+                _ocr = _get_ocr()
+                if not _ocr.is_available():
+                    trigger_render_first = False
+                    logger.debug("render_first_disabled_no_ocr=true")
+            except Exception:
+                trigger_render_first = False
+
+        if trigger_render_first:
             logger.info(
                 "Render-first triggered: trigger=%s, ooxml_quality=%.2f, table_index=%s",
                 trigger_reason or "signals_only",
@@ -1147,6 +1193,166 @@ class WordReader:
                 "render_first_metadata": _render_first_rejected_meta,
             },
         )
+
+    # ------------------------------------------------------------------
+    # G1: Merge decision function — replaces inline Ticket-6 logic
+    # ------------------------------------------------------------------
+    _FINANCIAL_STATEMENT_KEYWORDS = [
+        "kết quả kinh doanh",
+        "thu nhập",
+        "lưu chuyển tiền tệ",
+        "cash flow",
+        "income statement",
+        "changes in equity",
+        "changes in owner",
+        "biến động vốn chủ sở hữu",
+        "balance sheet",
+        "bảng cân đối kế toán",
+        "tình hình tài chính",
+        "financial position",
+    ]
+
+    def _decide_merge(
+        self,
+        prev_df: Optional[pd.DataFrame],
+        curr_df: pd.DataFrame,
+        prev_heading: Optional[str],
+        curr_heading: Optional[str],
+        curr_note_number: Optional[str],
+        page_break: bool,
+        paragraphs_since: int,
+        long_paragraph: bool,
+        is_footer: bool,
+        prev_is_footer: bool,
+        flags: Dict[str, Any],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        """Decide whether to merge curr_df into prev_df.
+
+        Returns:
+            (should_merge, reason_code, evidence_dict)
+        """
+        evidence: Dict[str, Any] = {
+            "prev_heading": prev_heading,
+            "curr_heading": curr_heading,
+            "note_number": curr_note_number,
+            "page_break": page_break,
+            "paragraphs_since": paragraphs_since,
+        }
+
+        # Pre-conditions: no merge if feature off, no prev table, footer, etc.
+        if not flags.get("ENABLE_SPLIT_TABLE_MERGE", True):
+            return False, "MERGE_DISABLED", evidence
+        if prev_df is None:
+            return False, "NO_PREV_TABLE", evidence
+        if is_footer:
+            return False, "CURR_IS_FOOTER", evidence
+        if prev_is_footer:
+            return False, "PREV_IS_FOOTER", evidence
+
+        # Financial-statement heading blocks merge
+        if curr_heading:
+            heading_lower = str(curr_heading).lower()
+            if any(kw in heading_lower for kw in self._FINANCIAL_STATEMENT_KEYWORDS):
+                return False, "MERGE_BLOCKED_FINANCIAL_STATEMENT", evidence
+
+        evidence["prev_cols"] = len(prev_df.columns)
+        evidence["curr_cols"] = len(curr_df.columns)
+
+        # Column count must match
+        if len(curr_df.columns) != len(prev_df.columns):
+            return False, "COLUMN_COUNT_MISMATCH", evidence
+
+        # Proximity check
+        proximity_pass = (paragraphs_since <= 2 and not long_paragraph) or page_break
+        if not proximity_pass:
+            return False, "PROXIMITY_FAIL", evidence
+
+        # G1 INVARIANT: If heading AND note_number are both None,
+        # block proximity-only merges (weak heuristic).
+        if curr_heading is None and curr_note_number is None and not page_break:
+            return False, "MERGE_WEAK_HEURISTIC_BLOCKED", evidence
+
+        # Patch B: When curr_heading is None on a page break, verify column
+        # headers match to avoid merging genuinely different tables.
+        if curr_heading is None and page_break and prev_df is not None:
+            prev_headers = {str(c).strip().lower() for c in prev_df.columns}
+            curr_headers = {str(c).strip().lower() for c in curr_df.columns}
+            union = prev_headers | curr_headers
+            intersection = prev_headers & curr_headers
+            header_sim = len(intersection) / max(len(union), 1)
+            evidence["header_similarity"] = round(header_sim, 3)
+            if header_sim < 0.5:
+                return False, "MERGE_BLOCKED_HEADER_MISMATCH", evidence
+
+        # Heading consistency — page_break alone does NOT override heading mismatch.
+        # Merge across page break only when curr_heading is absent (continuation)
+        # or headings match exactly.
+        heading_ok = curr_heading is None or curr_heading == prev_heading
+        evidence["heading_ok"] = heading_ok
+        evidence["heading_mismatch_on_page_break"] = (
+            not heading_ok and page_break and curr_heading is not None
+        )
+        if not heading_ok:
+            return False, "HEADING_MISMATCH", evidence
+
+        # Row continuity sanity (code-column reset detection)
+        if len(curr_df) > 0 and len(prev_df) > 0:
+            prev_last_val = str(prev_df.iloc[-1, 0]).strip()
+            curr_first_val = str(curr_df.iloc[0, 0]).strip()
+            if curr_first_val in (
+                "01",
+                "1",
+                "1.",
+                "01.",
+                "I",
+            ) and prev_last_val not in ("0", "00", "0."):
+                return False, "MERGE_BLOCKED_CONTINUITY", evidence
+
+        return True, "MERGED_BY_STRONG_ANCHOR", evidence
+
+    # ------------------------------------------------------------------
+    # G2: Repeated-header detection for post-merge splitting
+    # ------------------------------------------------------------------
+    _YEAR_DATE_RE = re.compile(r"\b20\d{2}\b|\d{1,2}/\d{1,2}/\d{4}")
+
+    def _find_repeated_header_row(self, df: pd.DataFrame) -> Optional[int]:
+        """Find the first body row that looks like a repeated year/date header.
+
+        Skips the first row (index 0) since that is the actual header.
+        A row is a repeated header if ≥2 cells match year/date patterns AND
+        ≥50% of column-header tokens are present in the row cells.
+
+        Returns:
+            Row index of the repeated header, or None.
+        """
+        if len(df) < 3:
+            return None
+
+        # Collect year/date tokens from column headers
+        header_tokens: set = set()
+        for col in df.columns:
+            for m in self._YEAR_DATE_RE.finditer(str(col)):
+                header_tokens.add(m.group())
+        if not header_tokens:
+            return None
+
+        # Scan body rows (skip row 0 which is the first data row after header promotion)
+        for row_idx in range(1, len(df)):
+            row_vals = [str(v) for v in df.iloc[row_idx]]
+            row_year_matches = set()
+            for cell in row_vals:
+                for m in self._YEAR_DATE_RE.finditer(cell):
+                    row_year_matches.add(m.group())
+
+            if len(row_year_matches) < 2:
+                continue
+
+            # Check overlap with header tokens
+            overlap = row_year_matches & header_tokens
+            if len(overlap) >= len(header_tokens) * 0.5:
+                return row_idx
+
+        return None
 
     def read_tables_with_headings(
         self, file_path: str, include_context: bool = True
@@ -1505,87 +1711,56 @@ class WordReader:
 
                 is_footer = self._is_footer_or_signature_table(df)
 
-                # Ticket 6: Split Table Guardrails
-                should_merge = False
+                # Ticket 6 (refactored): Merge decision via isolated function
+                should_merge, merge_reason, merge_evidence = self._decide_merge(
+                    prev_df=tables[-1] if tables else None,
+                    curr_df=df,
+                    prev_heading=headings[-1] if headings else None,
+                    curr_heading=current_heading,
+                    curr_note_number=current_note_number,
+                    page_break=getattr(self, "_page_break_since_last_table", False),
+                    paragraphs_since=paragraphs_since_last_table,
+                    long_paragraph=long_paragraph_since_last_table,
+                    is_footer=is_footer,
+                    prev_is_footer=(headings[-1] == "SKIPPED_FOOTER_SIGNATURE")
+                    if headings
+                    else False,
+                    flags=flags,
+                )
 
-                # Disable merging if this is likely a financial statement (Cash flow, Income Statement)
-                is_financial_statement = False
-                if current_heading:
-                    heading_lower = str(current_heading).lower()
-                    if any(
-                        kw in heading_lower
-                        for kw in [
-                            "kết quả kinh doanh",
-                            "thu nhập",
-                            "lưu chuyển tiền tệ",
-                            "cash flow",
-                            "income statement",
-                            "changes in equity",
-                            "changes in owner",
-                            "biến động vốn chủ sở hữu",
-                            "balance sheet",
-                            "bảng cân đối kế toán",
-                            "tình hình tài chính",
-                            "financial position",
-                        ]
-                    ):
-                        is_financial_statement = True
-
-                if (
-                    flags.get("ENABLE_SPLIT_TABLE_MERGE", True)
-                    and not is_financial_statement
-                    and tables
-                    and not is_footer
-                    and headings[-1] != "SKIPPED_FOOTER_SIGNATURE"
-                ):
-                    prev_df = tables[-1]
-                    # Prioritize merging if a page break occurred since the last table
-                    proximity_pass = (
-                        paragraphs_since_last_table <= 2
-                        and not long_paragraph_since_last_table
-                    ) or getattr(self, "_page_break_since_last_table", False)
-
-                    if proximity_pass and len(df.columns) == len(prev_df.columns):
-                        # Type Consistency / Header alignment proxy
-                        prev_heading = headings[-1]
-                        if (
-                            current_heading is None
-                            or current_heading == prev_heading
-                            or getattr(self, "_page_break_since_last_table", False)
-                        ):
-                            # Row Continuity Sanity (Crucial for CFS)
-                            # Check if the first column is likely a Code column
-                            continuity_broken = False
-                            if len(df) > 0 and len(prev_df) > 0:
-                                prev_last_val = str(prev_df.iloc[-1, 0]).strip()
-                                curr_first_val = str(df.iloc[0, 0]).strip()
-
-                                # If the new table resets the code to '01', '1', '1.', abort merge
-                                # Ensure we're actually looking at numeric/roman codes,
-                                # and the previous isn't ending with '00' or something that naturally precedes 1
-                                if curr_first_val in (
-                                    "01",
-                                    "1",
-                                    "1.",
-                                    "01.",
-                                    "I",
-                                ) and prev_last_val not in ("0", "00", "0."):
-                                    continuity_broken = True
-
-                            if not continuity_broken:
-                                should_merge = True
+                logger.info(
+                    "merge_decision=%s evidence=%s table_index=%s",
+                    merge_reason,
+                    merge_evidence,
+                    table_index,
+                )
+                table_context["merge_reason"] = merge_reason
+                table_context["merge_evidence"] = merge_evidence
 
                 if should_merge:
                     # Merge into previous table
-                    # To align columns, we safely reset column names before concat
                     df_to_merge = df.copy()
                     df_to_merge.columns = tables[-1].columns
                     merged_df = pd.concat([tables[-1], df_to_merge], ignore_index=True)
-                    tables[-1] = merged_df
-                    logger.info(
-                        "Ticket-6: Merged table %s with previous table (proximity/page-break passed, schema matched)",
-                        table_index,
-                    )
+
+                    # G2: Post-merge repeated-header detection
+                    split_idx = self._find_repeated_header_row(merged_df)
+                    if split_idx is not None:
+                        # Split at repeated header boundary
+                        first_half = merged_df.iloc[:split_idx].reset_index(drop=True)
+                        second_half = merged_df.iloc[split_idx:].reset_index(drop=True)
+                        tables[-1] = first_half
+                        tables.append(second_half)
+                        headings.append(current_heading or headings[-1] or "")
+                        table_context["structure_flag"] = "REPEATED_HEADER_SPLIT"
+                        table_contexts.append(table_context)
+                        logger.info(
+                            "repeated_header_action=SPLIT row_idx=%s table_index=%s",
+                            split_idx,
+                            table_index,
+                        )
+                    else:
+                        tables[-1] = merged_df
                 else:
                     if is_footer:
                         tables.append(df)

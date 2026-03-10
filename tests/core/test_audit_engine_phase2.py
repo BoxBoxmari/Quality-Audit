@@ -170,25 +170,41 @@ class TestTableClassifierV2:
         result = clf.classify(_make_table(rows), "Statement of Cash Flows")
         assert result.table_type == TableType.FS_CASH_FLOW
 
-    def test_generic_note_fallback(self):
+    def test_no_signals_fallback_returns_unknown(self):
+        # Minimal table with no Code column and no code-like values so no
+        # structure signals are produced; classifier must return UNKNOWN
+        # instead of assuming GENERIC_NOTE (fix: avoid misclassifying FS tables).
         rows = [
-            {"Item": "Accrued expenses", "Amount": 100},
-            {"Item": "Audit fees", "Amount": 20},
-            {"Item": "Legal fees", "Amount": 30},
+            {"Item": "Unknown item", "Value": "N/A"},
         ]
         clf = TableClassifierV2()
-        result = clf.classify(_make_table(rows), "Accrued expenses")
-        assert result.table_type == TableType.GENERIC_NOTE
+        result = clf.classify(_make_table(rows), "Other")
+        assert result.table_type == TableType.UNKNOWN
+        assert result.confidence == 0.0
 
-    def test_negative_keyword_forces_note(self):
+    def test_details_heading_does_not_force_note(self):
         rows = [
             {"Code": "100", "Item": "Assets", "Amount": 1000},
             {"Code": "110", "Item": "Cash", "Amount": 500},
+            {"Code": "270", "Item": "Total assets", "Amount": 1500},
+            {"Code": "300", "Item": "Liabilities", "Amount": 900},
         ]
         clf = TableClassifierV2()
         result = clf.classify(_make_table(rows), "Details of balance sheet items")
-        # "details of" is negative keyword → should route to note
-        assert result.table_type in (TableType.GENERIC_NOTE, TableType.UNKNOWN)
+        # Headings containing "details of" for a full statement should still be
+        # classified as a financial statement, not forced to note.
+        assert result.table_type == TableType.FS_BALANCE_SHEET
+
+    def test_accounting_policy_heading_forces_note(self):
+        rows = [
+            {"Item": "Accounting policies", "Amount": 0},
+            {"Item": "Revenue recognition policy", "Amount": 0},
+        ]
+        clf = TableClassifierV2()
+        result = clf.classify(
+            _make_table(rows), "Significant accounting policies"
+        )
+        assert result.table_type == TableType.GENERIC_NOTE
 
     def test_skipped_heading(self):
         clf = TableClassifierV2()
