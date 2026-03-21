@@ -202,17 +202,22 @@ Examples:
         return 1 if failed > 0 else 0
 
     except ValueError as e:
+        logging.getLogger("quality_audit").exception("Configuration error: %s", e)
         print(f"Configuration Error: {e}")
         return 1
     except KeyboardInterrupt:
+        logging.getLogger("quality_audit").exception("Processing cancelled by user")
         print("\nProcessing cancelled by user")
         return 130
     except QualityAuditError as e:
+        logging.getLogger("quality_audit").exception("Quality Audit error: %s", e)
         print(f"Quality Audit error: {e}")
         return 1
     except Exception as e:
+        logging.getLogger("quality_audit").exception(
+            "Unexpected error during processing: %s", e
+        )
         print(f"\nERROR: Unexpected error during processing: {e}")
-        # In a real tool, might want traceback.print_exc() here if debug
         return 2
 
 
