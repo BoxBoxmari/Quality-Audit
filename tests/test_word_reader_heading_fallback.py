@@ -1,6 +1,18 @@
 from docx import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 from quality_audit.io.word_reader import WordReader
+
+
+def _append_minimal_sect_pr_to_paragraph(paragraph) -> None:
+    """Insert w:sectPr as last child of w:p (section break inside paragraph)."""
+    sect_pr = OxmlElement("w:sectPr")
+    pg_sz = OxmlElement("w:pgSz")
+    pg_sz.set(qn("w:w"), "11906")
+    pg_sz.set(qn("w:h"), "16838")
+    sect_pr.append(pg_sz)
+    paragraph._element.append(sect_pr)
 
 
 class TestWordReaderHeadingFallback:
@@ -65,3 +77,44 @@ class TestWordReaderHeadingFallback:
         # First-row cells are all numeric/code-like, so we must keep the paragraph heading
         assert heading == "Balance Sheet"
         assert table_ctx.get("heading_source") == "paragraph"
+
+    def test_note_number_not_inherited_after_sect_pr_inside_paragraph(self, tmp_path):
+        """
+        After w:sectPr inside w:p, note context must reset so a later table
+        does not inherit note_number from a prior note heading.
+        """
+        doc_path = tmp_path / "sect_pr_resets_note.docx"
+        doc = Document()
+
+        note_para = doc.add_paragraph("Note 10")
+        note_para.style = doc.styles["Heading 1"]
+
+        t1 = doc.add_table(rows=2, cols=2)
+        t1.cell(0, 0).text = "A"
+        t1.cell(0, 1).text = "1"
+        t1.cell(1, 0).text = "B"
+        t1.cell(1, 1).text = "2"
+
+        doc.add_paragraph("")
+        t2 = doc.add_table(rows=2, cols=2)
+        t2.cell(0, 0).text = "C"
+        t2.cell(0, 1).text = "3"
+        t2.cell(1, 0).text = "D"
+        t2.cell(1, 1).text = "4"
+
+        doc.save(str(doc_path))
+
+        doc_reload = Document(str(doc_path))
+        # Body order: p (note), tbl, p (empty), tbl — sectPr on the empty paragraph
+        _append_minimal_sect_pr_to_paragraph(doc_reload.paragraphs[1])
+        doc_reload.save(str(doc_path))
+
+        reader = WordReader()
+        tables = reader.read_tables_with_headings(str(doc_path))
+
+        assert len(tables) == 2
+        _df1, _h1, ctx1 = tables[0]
+        _df2, _h2, ctx2 = tables[1]
+
+        assert ctx1.get("note_number") == "10"
+        assert ctx2.get("note_number") is None

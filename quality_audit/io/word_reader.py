@@ -1791,6 +1791,7 @@ class WordReader:
                 if any(c.tag.endswith("sectPr") for c in block):
                     prior_paragraphs.clear()
                     current_heading = None
+                    current_note_number = None
                 # Comment 2: empty paragraph or page break = boundary, clear buffer
                 from docx.oxml.ns import qn
                 from docx.text.paragraph import Paragraph
