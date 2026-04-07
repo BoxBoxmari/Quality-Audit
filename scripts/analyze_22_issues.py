@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Deep analysis of 22 remaining issues with actionable fix recommendations."""
+
 import sys
 from collections import defaultdict
 from pathlib import Path

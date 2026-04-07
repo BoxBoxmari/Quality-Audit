@@ -5,11 +5,47 @@ from quality_audit.core.routing.table_type_classifier import (
     TableType,
     TableTypeClassifier,
 )
+from quality_audit.core.validators.balance_sheet_validator import BalanceSheetValidator
 from quality_audit.core.validators.factory import ValidatorFactory
 from quality_audit.core.validators.generic_validator import GenericTableValidator
 
 
 class TestTableTypeClassifierBalanceSheet:
+    def test_parity_mode_forces_balance_sheet_validator_even_without_numeric_evidence(
+        self, monkeypatch
+    ):
+        """
+        Parity lock:
+        When legacy_parity_mode=True and classifier resolves FS_BALANCE_SHEET,
+        factory must return BalanceSheetValidator regardless of numeric evidence.
+        """
+        df = pd.DataFrame(
+            {
+                "Code": ["100", "300", "440"],
+                "Description": ["Total Assets", "Total Liabilities", "Equity"],
+                "Notes": ["Narrative only", "Narrative only", "Narrative only"],
+            }
+        )
+        ctx = AuditContext(cache=LRUCacheManager(max_size=100))
+
+        monkeypatch.setattr(
+            "quality_audit.core.validators.factory.get_feature_flags",
+            lambda: {
+                "legacy_parity_mode": True,
+                "routing_balance_sheet_gating_enabled": True,
+                "routing_balance_sheet_numeric_threshold": 0.99,
+                "routing_balance_sheet_gating_policy": "downgrade_to_generic",
+            },
+        )
+
+        validator, skip_reason = ValidatorFactory.get_validator(
+            df, heading="Statement of Financial Position", context=ctx
+        )
+
+        assert skip_reason is None
+        assert validator is not None
+        assert isinstance(validator, BalanceSheetValidator)
+
     def test_balance_sheet_detected_with_liabilities_after_early_rows(self):
         """
         Assets in early rows and Liabilities appearing after row 20 should still be
@@ -53,7 +89,9 @@ class TestTableTypeClassifierBalanceSheet:
 
         assert result.table_type in {TableType.GENERIC_NOTE, TableType.UNKNOWN}
 
-    def test_balance_sheet_routing_downgraded_when_no_numeric_evidence(self):
+    def test_balance_sheet_routing_downgraded_when_no_numeric_evidence(
+        self, monkeypatch
+    ):
         """
         Tables with ASSETS/LIABILITIES keywords but text-only columns are routed
         to GenericTableValidator when gating is enabled (numeric_evidence_score < threshold).
@@ -65,6 +103,15 @@ class TestTableTypeClassifierBalanceSheet:
             }
         )
         ctx = AuditContext(cache=LRUCacheManager(max_size=100))
+        monkeypatch.setattr(
+            "quality_audit.core.validators.factory.get_feature_flags",
+            lambda: {
+                "legacy_parity_mode": False,
+                "routing_balance_sheet_gating_enabled": True,
+                "routing_balance_sheet_numeric_threshold": 0.25,
+                "routing_balance_sheet_gating_policy": "downgrade_to_generic",
+            },
+        )
         validator, skip_reason = ValidatorFactory.get_validator(
             df, heading="Statement of Financial Position", context=ctx
         )

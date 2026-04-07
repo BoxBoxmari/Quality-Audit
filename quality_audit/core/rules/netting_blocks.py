@@ -69,7 +69,9 @@ class NettingBlocksRule(AuditRule):
 
             # Sign-safe: if Less is already negative (common presentation),
             # expected net becomes total + less.
-            expected_net = total_val + less_val if less_val < 0 else total_val - less_val
+            expected_net = (
+                total_val + less_val if less_val < 0 else total_val - less_val
+            )
             tol = materiality.compute(abs(expected_net), table_type)
             diff = net_val - expected_net
 
@@ -91,7 +93,11 @@ class NettingBlocksRule(AuditRule):
                         actual=net_val,
                         tolerance=tol,
                         severity=self.severity_default,
-                        source_rows=[int(total_row_idx), int(less_row_idx), int(net_row_idx)],
+                        source_rows=[
+                            int(total_row_idx),
+                            int(less_row_idx),
+                            int(net_row_idx),
+                        ],
                         source_cols=[col],
                         table_type=table_type,
                         table_id=table_id,
@@ -113,7 +119,11 @@ class NettingBlocksRule(AuditRule):
                     is_material=False,
                     severity=Severity.INFO,
                     confidence=1.0,
-                    source_rows=[int(total_row_idx), int(less_row_idx), int(net_row_idx)],
+                    source_rows=[
+                        int(total_row_idx),
+                        int(less_row_idx),
+                        int(net_row_idx),
+                    ],
                     source_cols=[col],
                     table_type=table_type,
                     table_id=table_id,

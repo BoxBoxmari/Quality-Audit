@@ -12,7 +12,6 @@ from ...config.constants import (
     CROSS_CHECK_TABLES_FORM_1,
     CROSS_CHECK_TABLES_FORM_2,
     CROSS_CHECK_TABLES_FORM_3,
-    FAIL_TOOL_EXTRACT_MISSING_PERIOD_COLUMN,
     FAIL_TOOL_EXTRACT_NO_NUMERIC,
     FAIL_TOOL_EXTRACT_NO_TOTALS,
     GATE_REASON_NO_DETAIL_ROWS,
@@ -37,7 +36,6 @@ from ...utils.numeric_utils import (
     normalize_numeric_column,
 )
 from ...utils.skip_classifier import classify_footer_signature
-from ..cache_manager import cross_check_marks
 from .base_validator import BaseValidator, ValidationResult
 
 logger = logging.getLogger(__name__)
@@ -517,52 +515,6 @@ class GenericTableValidator(BaseValidator):
 
         total_row_idx = self._find_total_row(df, code_cols=exclude_for_totals)
         amount_cols = self._detect_amount_columns(df, code_cols=exclude_for_totals)
-
-        # A3: movement/reconciliation gating (heuristic); Phase 4: extended movement_terms
-        movement_terms = [
-            "movement",
-            "reconciliation",
-            "opening balance",
-            "closing balance",
-            "addition",
-            "additions",
-            "paid",
-            "payment",
-            "transfer",
-            "decrease",
-            "increase",
-            "phát sinh",
-            "số đầu",
-            "số cuối",
-            "tăng",
-            "giảm",
-            "chuyển",
-            "nộp",
-            "brought forward",
-            "carried forward",
-            "disposal",
-            "disposals",
-            "acquisition",
-            "depreciation",
-            "số chuyển",
-            "đầu kỳ",
-            "cuối kỳ",
-        ]
-        if flags.get("movement_rollforward", False):
-            movement_structure = self._detect_movement_structure(df)
-        else:
-            movement_structure = None
-        heading_text = heading_lower or ""
-        header_text = " ".join(str(c).lower() for c in df.columns)
-        is_movement_table = (
-            any(t in heading_text for t in movement_terms)
-            or any(t in header_text for t in movement_terms)
-            or (
-                movement_structure is not None
-                and flags.get("movement_rollforward", False)
-            )
-        )
-
         if total_row_idx is None and not self._needs_column_check(heading_lower):
             return ValidationResult(
                 status="INFO: Bảng không có dòng/cột tổng",
@@ -764,47 +716,6 @@ class GenericTableValidator(BaseValidator):
         marks: List[Dict] = []
         cross_ref_marks: List[Dict] = []
 
-        # Comment 1: When movement_rollforward is on, run roll-forward before other total checks.
-        # If roll-forward has insufficient data (missing OB/CB or no numeric OB/CB), return INFO early.
-        if (
-            movement_structure is not None
-            and flags.get("movement_rollforward", False)
-            and amount_cols
-        ):
-            ob_row = movement_structure.get("ob_row")
-            cb_row = movement_structure.get("cb_row")
-            if ob_row is None or cb_row is None:
-                return ValidationResult(
-                    status="INFO: Bỏ qua kiểm tra roll-forward (thiếu OB/CB)",
-                    marks=[],
-                    cross_ref_marks=[],
-                    status_enum="INFO",
-                    context={"rollforward_skip_reason": "missing_ob_cb"},
-                    assertions_count=0,
-                )
-            has_numeric_ob_cb = False
-            for col in amount_cols:
-                try:
-                    ob_v = pd.to_numeric(df_numeric.loc[ob_row, col], errors="coerce")
-                    cb_v = pd.to_numeric(df_numeric.loc[cb_row, col], errors="coerce")
-                    if pd.notna(ob_v) and pd.notna(cb_v):
-                        has_numeric_ob_cb = True
-                        break
-                except (KeyError, TypeError):
-                    continue
-            if not has_numeric_ob_cb:
-                return ValidationResult(
-                    status="INFO: Bỏ qua kiểm tra roll-forward (không có dữ liệu số OB/CB)",
-                    marks=[],
-                    cross_ref_marks=[],
-                    status_enum="INFO",
-                    context={"rollforward_skip_reason": "no_numeric_ob_cb"},
-                    assertions_count=0,
-                )
-            self._validate_rollforward(
-                df_numeric, movement_structure, amount_cols, marks, issues
-            )
-
         if check_separately_total:
             # Fixed assets validation (simplified)
             result = self._validate_fixed_assets(df, df_numeric, heading_lower)
@@ -942,28 +853,20 @@ class GenericTableValidator(BaseValidator):
         else:
             preview = "; ".join(issues[:10])
             more = f" ... (+{len(issues) - 10} dòng)" if len(issues) > 10 else ""
-            if is_movement_table:
-                status = (
-                    f"WARN: Bảng movement/reconciliation — bỏ qua FAIL sum-check (downgraded). "
-                    f"{len(issues)} sai lệch. {preview}{more}"
-                )
-            else:
-                status = (
-                    f"FAIL: Kiểm tra công thức: {len(issues)} sai lệch. {preview}{more}"
-                )
+            status = (
+                f"FAIL: Kiểm tra công thức: {len(issues)} sai lệch. {preview}{more}"
+            )
 
         # SCRUM-8: Clean up visual conflicts and dedupe marks
         marks, cross_ref_marks = self._deduplicate_marks(
             marks,
             cross_ref_marks,
-            is_table_fail=(not is_movement_table and bool(issues)),
+            is_table_fail=bool(issues),
         )
 
         # Phase 6.1: Explicit status_enum for taxonomy (PASS / FAIL / WARN)
         if not issues:
             status_enum_val = "PASS"
-        elif is_movement_table:
-            status_enum_val = "WARN"
         else:
             status_enum_val = "FAIL"
 
@@ -1004,7 +907,6 @@ class GenericTableValidator(BaseValidator):
             "code_col_detection_method": code_col_detection_method,
             "code_col_name": code_col,
             "amount_columns": amount_cols,
-            "is_movement_table": is_movement_table,
             "numeric_evidence_score": gate_score,
             "numeric_evidence_per_column": evidence.get("per_column", {}),
             "numeric_col_candidates": evidence.get("numeric_col_candidates", []),
@@ -1025,75 +927,7 @@ class GenericTableValidator(BaseValidator):
             context=ctx_dict,
             assertions_count=assertions_count,
         )
-        # Phase 4.2: Escalate to FAIL_TOOL_EXTRACT when low score is due to missing period columns
-        expected_period_cols = 2
-        actual_numeric_cols = (
-            len(amount_cols)
-            if amount_cols
-            else len(evidence.get("numeric_col_candidates", []))
-        )
-        if gate_score < 0.25 and actual_numeric_cols < expected_period_cols:
-            # Ticket-3: Bypass CY/PY gate when movement/roll-forward structure detected
-            movement_structure = self._detect_movement_structure(df_numeric)
-            if movement_structure is not None and is_movement_table:
-                # Run roll-forward validation instead of failing
-                logger.info(
-                    "Ticket-3: Bypassing CY/PY gate for movement table (gate_score=%.3f)",
-                    gate_score,
-                )
-                rf_issues: List[str] = []
-                rf_marks: List[Dict] = []
-                self._validate_rollforward(
-                    df_numeric,
-                    movement_structure,
-                    amount_cols if amount_cols else list(df_numeric.columns),
-                    rf_marks,
-                    rf_issues,
-                )
-                if rf_issues:
-                    rf_preview = "; ".join(rf_issues[:5])
-                    rf_status = (
-                        f"FAIL: Roll-forward {len(rf_issues)} sai lệch. {rf_preview}"
-                    )
-                    rf_enum = "FAIL"
-                else:
-                    rf_status = "PASS: Roll-forward OB + movements ≈ CB: KHỚP"
-                    rf_enum = "PASS"
-                result = ValidationResult(
-                    status=rf_status,
-                    marks=rf_marks,
-                    cross_ref_marks=cross_ref_marks,
-                    rule_id="ROLLFORWARD_VALIDATION",
-                    status_enum=rf_enum,
-                    context={
-                        **ctx_dict,
-                        "bypass_reason": "movement_structure_detected",
-                        "movement_structure": movement_structure,
-                    },
-                    assertions_count=len(rf_marks),
-                )
-            else:
-                result = ValidationResult(
-                    status=(
-                        f"FAIL_TOOL_EXTRACT: Missing period columns "
-                        f"(expected {expected_period_cols}, found {actual_numeric_cols})"
-                    ),
-                    marks=marks,
-                    cross_ref_marks=cross_ref_marks,
-                    rule_id=FAIL_TOOL_EXTRACT_MISSING_PERIOD_COLUMN,
-                    status_enum="FAIL_TOOL_EXTRACT",
-                    context={
-                        **ctx_dict,
-                        "failure_reason_code": "MISSING_PERIOD_COLUMN",
-                        "expected_columns": expected_period_cols,
-                        "actual_columns": actual_numeric_cols,
-                    },
-                    assertions_count=assertions_count,
-                )
-        else:
-            result = self._enforce_pass_gating(
-                result, result.assertions_count, gate_score
-            )
+        result = self._enforce_pass_gating(result, result.assertions_count, gate_score)
         ctx_from_table = table_context or {}
         logger.info(
             "generic_validator: table_id=%s classifier=%s final_status=%s assertions_count=%s no_assertion_reason=%s",
@@ -1452,35 +1286,48 @@ class GenericTableValidator(BaseValidator):
                     issues.append(commentCB)
 
         # SCRUM-12: Cross-check NBV with BSPL using year alignment
-        # Prefer numeric Total/Tổng column: Priority 1 exact/standalone, Priority 2 partial match
-        roles, _, _ = infer_column_roles(df)
-        total_col = None
-        for col in df.columns:
-            col_lower = str(col).lower().strip()
-            if (
-                col_lower in ("total", "tổng")
-                or col_lower.endswith(" total")
-                or col_lower.endswith(" tổng")
-            ):
-                if col in roles and roles[col] == ROLE_NUMERIC:
-                    total_col = col
-                    break
-        if not total_col:
+        flags = get_feature_flags()
+        is_parity_mode = bool(flags.get("legacy_parity_mode", False))
+
+        # Parity lock: fixed-assets cross-check uses legacy last-two-column semantics,
+        # even if a detector returns a plausible but incorrect (CY,PY) pair.
+        if is_parity_mode and len(df.columns) >= 2:
+            detected_cur_col = None
+            detected_prior_col = None
+            CY_col_idx = len(df.columns) - 1
+            PY_col_idx = len(df.columns) - 2
+        else:
+            # Prefer numeric Total/Tổng column: Priority 1 exact/standalone, Priority 2 partial match
+            roles, _, _ = infer_column_roles(df)
+            total_col = None
             for col in df.columns:
-                if re.search(r"\btotal\b|\btổng\b", str(col).lower().strip()):
+                col_lower = str(col).lower().strip()
+                if (
+                    col_lower in ("total", "tổng")
+                    or col_lower.endswith(" total")
+                    or col_lower.endswith(" tổng")
+                ):
                     if col in roles and roles[col] == ROLE_NUMERIC:
                         total_col = col
                         break
-        if total_col:
-            detected_cur_col = total_col
-            detected_prior_col = total_col
-        else:
-            detected_cur_col, detected_prior_col = (
-                ColumnDetector.detect_financial_columns_advanced(df)
-            )
+            if not total_col:
+                for col in df.columns:
+                    if re.search(r"\btotal\b|\btổng\b", str(col).lower().strip()):
+                        if col in roles and roles[col] == ROLE_NUMERIC:
+                            total_col = col
+                            break
+            if total_col:
+                detected_cur_col = total_col
+                detected_prior_col = total_col
+            else:
+                detected_cur_col, detected_prior_col = (
+                    ColumnDetector.detect_financial_columns_advanced(df)
+                )
 
         # P0.3: When detection returns (None, None), try _infer_total_column, then feature-flagged fallback
-        if not detected_cur_col and not detected_prior_col:
+        if not detected_cur_col and not detected_prior_col and not (
+            is_parity_mode and len(df.columns) >= 2
+        ):
             # Ticket-2: Try anchor-based total column inference
             anchor_rows = []
             if AD_start_row_idx is not None and AD_start_row_idx - 1 >= 0:
@@ -1507,11 +1354,11 @@ class GenericTableValidator(BaseValidator):
                 PY_col_idx = len(df.columns) - 2
             else:
                 return ValidationResult(
-                    status="FAIL_TOOL_EXTRACT: Không có cặp cột CY/PY đủ bằng chứng số",
+                    status="INFO_SKIPPED: Không có cặp cột CY/PY đủ bằng chứng số",
                     marks=marks,
                     cross_ref_marks=cross_ref_marks,
                     rule_id="NO_NUMERIC_EVIDENCE",
-                    status_enum="FAIL_TOOL_EXTRACT",
+                    status_enum="INFO_SKIPPED",
                     context={"failure_reason_code": "NO_NUMERIC_EVIDENCE"},
                 )
         else:
@@ -1672,8 +1519,17 @@ class GenericTableValidator(BaseValidator):
             more = f" ... (+{len(issues) - 10} dòng)" if len(issues) > 10 else ""
             status = f"FAIL: Fixed assets - kiểm tra công thức: {len(issues)} sai lệch. {preview}{more}"
 
+        # Observability: count executed checks. For this validator path, each produced mark
+        # corresponds to a concrete assertion (PASS/FAIL) that was evaluated.
+        assertions_count = len(marks) + len(cross_ref_marks)
+
         return ValidationResult(
-            status=status, marks=marks, cross_ref_marks=cross_ref_marks
+            status=status,
+            marks=marks,
+            cross_ref_marks=cross_ref_marks,
+            rule_id="FIXED_ASSET_VALIDATION",
+            status_enum="PASS" if not issues else "FAIL",
+            assertions_count=assertions_count,
         )
 
     def _validate_column_totals(
@@ -1693,6 +1549,18 @@ class GenericTableValidator(BaseValidator):
         # Guard: Check if total column index is valid
         if last_col_idx < 0 or last_col_idx >= len(df_numeric.columns):
             return
+
+        flags = get_feature_flags()
+        is_parity_mode = bool(flags.get("legacy_parity_mode", False))
+        if is_parity_mode:
+            # In legacy parity, prefer an explicit Total column even if it isn't last.
+            cols = list(df_numeric.columns)
+            total_like = next(
+                (idx for idx, c in enumerate(cols) if str(c).strip().lower() == "total"),
+                None,
+            )
+            if total_like is not None:
+                last_col_idx = int(total_like)
 
         # Guard: Check if total_row_idx is valid
         if total_row_idx < 0 or total_row_idx >= len(df_numeric):
@@ -1733,7 +1601,12 @@ class GenericTableValidator(BaseValidator):
 
             if not pd.isna(col_total_val) and not pd.isna(row_sum):
                 diff = row_sum - float(col_total_val)
-                is_ok, _, _, _ = compare_amounts(row_sum, float(col_total_val))
+                if is_parity_mode:
+                    is_ok, _, _, _ = compare_amounts(
+                        row_sum, float(col_total_val), abs_tol=0.0, rel_tol=0.0
+                    )
+                else:
+                    is_ok, _, _, _ = compare_amounts(row_sum, float(col_total_val))
 
                 comment = (
                     f"CỘT TỔNG - Dòng {i + 1}: Tính lại={row_sum:,.2f}, "
@@ -1746,6 +1619,7 @@ class GenericTableValidator(BaseValidator):
                         "col": last_col_idx,
                         "ok": is_ok,
                         "comment": None if is_ok else comment,
+                        "rule_id": "COLUMN_TOTAL_VALIDATION",
                     }
                 )
 
@@ -2311,10 +2185,7 @@ class GenericTableValidator(BaseValidator):
                         0,
                         CY_col_idx - PY_col_idx,
                     )
-                    if self.context:
-                        self.context.marks.add(account_name)
-                    # Backward compat: also populate global marks
-                    cross_check_marks.add(account_name)
+                    self._active_cross_check_marks().add(account_name)
             else:
                 # FORM_3: Use search functions for special cases
                 self._handle_cross_check_form_3(
@@ -2363,10 +2234,15 @@ class GenericTableValidator(BaseValidator):
                 except (ValueError, IndexError):
                     pass  # Use fallback
 
+            # Prefer detected total row (parity lock); fall back to last row.
+            total_row_idx = self._find_total_row(df, code_cols=[])  # type: ignore[arg-type]
+            if total_row_idx is None:
+                total_row_idx = len(df) - 1
+
             # SCRUM-12: Bounds checking before accessing
             CY_bal = 0.0
             PY_bal = 0.0
-            final_row_idx = len(df) - 1
+            final_row_idx = int(total_row_idx)
 
             if (
                 final_row_idx >= 0
@@ -2506,16 +2382,19 @@ class GenericTableValidator(BaseValidator):
         # Cross-check "net revenue (10 = 01 - 02)"
         account_name = "net revenue (10 = 01 - 02)"
         if account_name:
-            CY_bal = (
-                df_numeric.iloc[len(df) - 1, len(df.columns) - 2]
-                if not pd.isna(df_numeric.iloc[len(df) - 1, len(df.columns) - 2])
-                else 0
-            )
-            PY_bal = (
-                df_numeric.iloc[len(df) - 1, len(df.columns) - 1]
-                if not pd.isna(df_numeric.iloc[len(df) - 1, len(df.columns) - 1])
-                else 0
-            )
+            total_row_idx = self._find_total_row(df, code_cols=[])  # type: ignore[arg-type]
+            if total_row_idx is None:
+                total_row_idx = len(df) - 1
+            tr = int(total_row_idx)
+            cy_col = len(df.columns) - 2
+            py_col = len(df.columns) - 1
+
+            CY_bal = df_numeric.iloc[tr, cy_col] if tr < len(df_numeric) else 0
+            PY_bal = df_numeric.iloc[tr, py_col] if tr < len(df_numeric) else 0
+            if pd.isna(CY_bal):
+                CY_bal = 0
+            if pd.isna(PY_bal):
+                PY_bal = 0
             self.cross_check_with_BSPL(
                 df,
                 cross_ref_marks,
@@ -2523,8 +2402,8 @@ class GenericTableValidator(BaseValidator):
                 account_name,
                 CY_bal,
                 PY_bal,
-                len(df) - 1,
-                len(df.columns) - 2,
+                tr,
+                cy_col,
                 0,
                 -1,
             )
@@ -2641,7 +2520,7 @@ class GenericTableValidator(BaseValidator):
             if self.context:
                 self.context.marks.add(account_name)
             # Backward compat: also populate global marks
-            cross_check_marks.add(account_name)
+            self._active_cross_check_marks().add(account_name)
 
         def search_row_and_cross_ref(account_name: str, col_xref: int):
             """Search for opening balance row and cross-reference."""
@@ -2683,7 +2562,7 @@ class GenericTableValidator(BaseValidator):
             if self.context:
                 self.context.marks.add(account_name)
             # Backward compat: also populate global marks
-            cross_check_marks.add(account_name)
+            self._active_cross_check_marks().add(account_name)
 
         # Handle special cases based on heading
         if heading_lower == "bad and doubtful debts":
@@ -2759,7 +2638,7 @@ class GenericTableValidator(BaseValidator):
                 if self.context:
                     self.context.marks.add(account_name)
                 # Backward compat: also populate global marks
-                cross_check_marks.add(account_name)
+                self._active_cross_check_marks().add(account_name)
 
         elif any(
             term in heading_lower

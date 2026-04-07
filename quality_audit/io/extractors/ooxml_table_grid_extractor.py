@@ -452,9 +452,9 @@ class OOXMLTableGridExtractor:
                             grid[header_row_idx][col_idx] = base
                         else:
                             seen_periods[base] += 1
-                            grid[header_row_idx][col_idx] = (
-                                f"{base}_{seen_periods[base]}"
-                            )
+                            grid[header_row_idx][
+                                col_idx
+                            ] = f"{base}_{seen_periods[base]}"
                     violations.append("duplicate_periods_renamed")
             else:
                 header = [str(c).strip() for c in grid[0]]

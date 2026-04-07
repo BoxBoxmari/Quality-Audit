@@ -77,16 +77,16 @@ class TestE2EPipelineRestoration:
 
         # Verify Executive Summary has content
         ws_exec = wb["Executive Summary"]
-        assert ws_exec["A1"].value == "EXECUTIVE SUMMARY", (
-            "Executive Summary header missing"
-        )
-        assert ws_exec["A5"].value == "Total Tables", (
-            "Executive Summary metrics missing"
-        )
+        assert (
+            ws_exec["A1"].value == "EXECUTIVE SUMMARY"
+        ), "Executive Summary header missing"
+        assert (
+            ws_exec["A5"].value == "Total Tables"
+        ), "Executive Summary metrics missing"
         total_tables = ws_exec["B5"].value
-        assert total_tables is not None and total_tables > 0, (
-            "Executive Summary has no table count"
-        )
+        assert (
+            total_tables is not None and total_tables > 0
+        ), "Executive Summary has no table count"
 
         # Verify FS casting sheet exists and has table blocks
         ws_fs = wb["FS casting"]
@@ -103,24 +103,24 @@ class TestE2EPipelineRestoration:
         ws_focus = wb["Focus List"]
         assert ws_focus["A1"].value == "Table Name", "Focus List headers missing"
         assert ws_focus["C1"].value == "Severity", "Focus List Severity column missing"
-        assert ws_focus["E1"].value == "Issue Description", (
-            "Focus List Issue Description missing"
-        )
+        assert (
+            ws_focus["E1"].value == "Issue Description"
+        ), "Focus List Issue Description missing"
         assert ws_focus["F1"].value == "Max Diff", "Focus List Max Diff column missing"
         # Verify hidden column K exists
-        assert ws_focus.column_dimensions["K"].hidden is True, (
-            "Column K should be hidden"
-        )
+        assert (
+            ws_focus.column_dimensions["K"].hidden is True
+        ), "Column K should be hidden"
 
         # Verify Run metadata exists
         ws_metadata = wb["Run metadata"]
         assert ws_metadata["A1"].value == "RUN METADATA", "Run metadata header missing"
-        assert ws_metadata["A4"].value == "Tool Version", (
-            "Run metadata build info missing"
-        )
-        assert ws_metadata["A9"].value == "Total Runtime (ms)", (
-            "Run metadata performance metrics missing"
-        )
+        assert (
+            ws_metadata["A4"].value == "Tool Version"
+        ), "Run metadata build info missing"
+        assert (
+            ws_metadata["A9"].value == "Total Runtime (ms)"
+        ), "Run metadata performance metrics missing"
 
         # Verify Tổng hợp kiểm tra has non-empty rows
         ws_summary = wb["Tổng hợp kiểm tra"]
@@ -228,12 +228,12 @@ class TestE2EPipelineRestoration:
 
         # Verify sheet order (first few sheets)
         sheetnames = wb.sheetnames
-        assert sheetnames[0] == "Executive Summary", (
-            f"First sheet should be Executive Summary, got: {sheetnames[0]}"
-        )
-        assert sheetnames[1] == "Focus List", (
-            f"Second sheet should be Focus List, got: {sheetnames[1]}"
-        )
+        assert (
+            sheetnames[0] == "Executive Summary"
+        ), f"First sheet should be Executive Summary, got: {sheetnames[0]}"
+        assert (
+            sheetnames[1] == "Focus List"
+        ), f"Second sheet should be Focus List, got: {sheetnames[1]}"
         assert "FS casting" in sheetnames, "FS casting sheet missing"
         assert "Tổng hợp kiểm tra" in sheetnames, "Tổng hợp kiểm tra sheet missing"
         assert "Run metadata" in sheetnames, "Run metadata sheet missing"

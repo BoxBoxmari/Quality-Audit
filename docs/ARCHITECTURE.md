@@ -12,15 +12,26 @@ Quality Audit is a modular Python application for validating financial statement
 - **`scripts/`** – One-off and utility scripts (extract, verify, analysis); see `scripts/README.md`.
 - **`tests/`** – Unit, integration, regression tests; **`tests/conftest.py`**, **`tests/fixtures/`**, **`tests/integration/`**, **`tests/io/`**, **`tests/regression/`**, **`tests/core/`**.
 - **`reports/`** – Generated or hand-written report artifacts (e.g. shortlist, verification).
-- **`legacy/`** – Legacy script **`Quality Audit.py`**.
+- **`legacy/`** – Legacy script **`Quality Audit.py`** (reference-only, excluded from main run/test flow).
 - **`README.md`**, **`CHANGELOG.md`**, **`openmemory.md`**, **`pyproject.toml`**, **`requirements.txt`** – Project metadata and config.
 
 ## Architecture Layers
 
+## Canonical entrypoints
+
+- **CLI**: `python -m quality_audit.cli`
+- **GUI (CTK default)**: `run_gui.bat` or `python -m quality_audit.ui_ctk`
+- **GUI (legacy Tk fallback)**: `python -m quality_audit.ui.tk_cli_gui`
+- `main.py` remains as a backward-compatible wrapper to `quality_audit.cli:main`.
+
 ### 1. Presentation Layer (GUI)
 
-- **Location**: `quality_audit/ui/`
+- **Location**: `quality_audit/ui_ctk/` (primary) and `quality_audit/ui/` (legacy Tk compatibility)
 - **Components**:
+  - `ui_ctk/main_window.py`: CustomTkinter main window, global scroll container, progress label, and Retry Failed flow
+  - `ui_ctk/runtime_contract.py`: Canonical runtime contract bridging UI to CLI/batch execution
+  - `ui_ctk/file_dialogs.py`: Input/output folder and multi-file picker dialogs
+  - `ui_ctk/app.py`: CTK app launch entry
   - `tk_cli_gui.py`: Tkinter-based Graphical User Interface with status bar, in-place editing, and settings persistence
   - `styles.py`: UI styling and themes (dark theme with accent colors)
   - `settings_store.py`: JSON-based settings persistence for GUI preferences
@@ -274,3 +285,8 @@ Excel File
 3. **Database Backend**: Replace cache with persistent database
 4. **Plugin System**: Allow custom validators via plugins
 5. **API Layer**: REST API for remote auditing
+
+## Parity references
+
+- `docs/PARITY_CONTRACT.md`: Runtime parity guarantees and mandatory lock tests.
+- `docs/PARITY_SUPPORTED_MATRIX.md`: Current parity lock coverage matrix and scope boundaries.

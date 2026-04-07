@@ -336,6 +336,33 @@ class BaseValidator(ABC):
         self.context = context
         self.cache_manager = cache_manager or (context.cache if context else None)
 
+    def _active_cross_check_cache(self):
+        """
+        Return the active cross-check cache for this validator run.
+
+        Priority:
+        1) context-scoped cache (preferred, run-isolated)
+        2) injected cache_manager (backward compatibility)
+        3) module global cross_check_cache (legacy fallback)
+        """
+        if self.context is not None:
+            return self.context.cache
+        if self.cache_manager is not None:
+            return self.cache_manager
+        return cross_check_cache
+
+    def _active_cross_check_marks(self):
+        """
+        Return the active cross-check mark store.
+
+        Priority:
+        1) context-scoped marks (preferred, run-isolated)
+        2) module global cross_check_marks (legacy fallback)
+        """
+        if self.context is not None:
+            return self.context.marks
+        return cross_check_marks
+
     def _check_extraction_quality(
         self, table_context: Optional[Dict]
     ) -> Optional[ValidationResult]:
@@ -479,6 +506,15 @@ class BaseValidator(ABC):
             result.context = {}
         if assertions_count == 0:
             flags = get_feature_flags()
+            # Parity mode: do not allow PASS with zero assertions, regardless of policy.
+            if flags.get("legacy_parity_mode", False):
+                result.status_enum = "INFO_SKIPPED"
+                result.status = "INFO_SKIPPED: No assertions executed"
+                result.context["failure_reason_code"] = "NO_ASSERTIONS"
+                logger.info(
+                    "PASS gating: overrode to INFO_SKIPPED (legacy_parity_mode=True, assertions_count=0)"
+                )
+                return result
             if flags.get("treat_no_assertion_as_pass", False):
                 result.context["no_assertion_reason"] = result.context.get(
                     "no_assertion_reason", "NOT_APPLICABLE"
@@ -1251,21 +1287,7 @@ class BaseValidator(ABC):
         # Try using RowClassifier-based detection first
         detected_totals = self._detect_total_rows(df, code_cols=exclude_list)
         if detected_totals:
-            if flags.get("tighten_total_row_keywords", False):
-                # Prefer grand_total > total > subtotal; within type take max(idx)
-                priority_order = ("grand_total", "total", "subtotal")
-                by_type: Dict[str, List[int]] = {}
-                for row_idx, row_type in detected_totals:
-                    by_type.setdefault(row_type, []).append(row_idx)
-                idx = None
-                for p in priority_order:
-                    if p in by_type and by_type[p]:
-                        idx = max(by_type[p])
-                        break
-                if idx is None:
-                    idx = detected_totals[-1][0]
-            else:
-                idx = detected_totals[-1][0]
+            idx = detected_totals[-1][0]
             # P4: Do not choose total row when there are 0 detail rows above it
             if idx > 0:
                 selection_method = "row_classifier"
@@ -1302,6 +1324,10 @@ class BaseValidator(ABC):
                 if amount_cols
                 else [c for c in df.columns if c not in label_cols and c not in exclude]
             )
+            # If classification left us with nothing to check (e.g., mixed dtype columns),
+            # fall back to scanning all non-excluded columns for numeric evidence.
+            if not cols_to_check:
+                cols_to_check = [c for c in df.columns if c not in exclude]
             for j in range(row_idx):
                 for c in cols_to_check:
                     if c in exclude:
@@ -1393,6 +1419,32 @@ class BaseValidator(ABC):
             if passing:
                 best = max(passing, key=lambda x: (x[1], -x[2]))
                 idx = best[0]
+
+                # Legacy parity lock: for accrued/deferred headings, if there's an early
+                # empty-separator row, force the total row to the last numeric row.
+                heading_hint = str(df.attrs.get("heading", "")).lower().strip()
+                is_parity_mode = bool(flags.get("legacy_parity_mode", False))
+                tighten_keywords = bool(flags.get("tighten_total_row_keywords", False))
+                if (
+                    is_parity_mode
+                    and tighten_keywords
+                    and ("accrued" in heading_hint or "deferred" in heading_hint)
+                ):
+                    def _is_empty_row_parity(row: pd.Series) -> bool:
+                        for v in row.values:
+                            if pd.isna(v):
+                                continue
+                            if str(v).strip():
+                                return False
+                        return True
+
+                    has_early_separator = any(
+                        _is_empty_row_parity(df.iloc[i]) for i in range(max(n - 2, 0))
+                    )
+                    if has_early_separator and numeric_rows:
+                        forced = max(numeric_rows)
+                        if forced > 0 and _has_detail_rows_above(forced):
+                            idx = forced
                 logger.info(
                     "Total row candidate selected: idx=%s, method=keyword_total_row, candidates=%s",
                     idx,
@@ -1451,326 +1503,6 @@ class BaseValidator(ABC):
 
         if flags.get("safe_total_row_selection", True):
             # When no heuristic matched, do not guess a total row (safe behavior)
-            if not keyword_candidates and not rule_b_candidates:
-                logger.info(
-                    "Total row: no keyword/rule_b candidates; returning None (safe_total_row_selection)"
-                )
-                return None
-            # Last resort: try to find a reasonable total row candidate
-            # Look for rows in bottom section with numeric values
-            fallback_candidates: List[int] = []  # Initialize for logging
-            relaxed_candidates: List[int] = []  # Initialize for logging
-            if numeric_rows:
-                # Expanded: Consider bottom 50% of rows as potential totals (was 30%)
-                bottom_start = max(0, len(df) - max(3, len(df) // 2))
-                # First pass: prefer rows with detail rows above
-                fallback_candidates_with_details = [
-                    i
-                    for i in numeric_rows
-                    if i >= bottom_start and _has_detail_rows_above(i)
-                ]
-                # Second pass: if no candidates with details, relax requirement for last few rows
-                if not fallback_candidates_with_details:
-                    # For very bottom rows (last 20%), allow even without detail rows above
-                    very_bottom_start = max(0, len(df) - max(2, len(df) // 5))
-                    fallback_candidates_with_details = [
-                        i for i in numeric_rows if i >= very_bottom_start
-                    ]
-
-                fallback_candidates = fallback_candidates_with_details
-                if fallback_candidates:
-                    # Prefer rows with more numeric values and better position
-                    best_fallback = None
-                    best_score: float = -1.0
-                    # If amount_cols is empty, use all columns except label_cols and exclude_cols
-                    candidate_cols = (
-                        amount_cols
-                        if amount_cols
-                        else [
-                            c
-                            for c in df.columns
-                            if c not in label_cols and c not in exclude
-                        ]
-                    )
-                    # Fallback: if candidate_cols is empty (all columns are labels/excluded),
-                    # use all columns except exclude only (allow label columns to be checked)
-                    if not candidate_cols:
-                        candidate_cols = [c for c in df.columns if c not in exclude]
-                        logger.info(
-                            "safe_fallback_last_numeric: candidate_cols was empty, falling back to all columns except exclude: %s",
-                            (
-                                candidate_cols[:10]
-                                if len(candidate_cols) > 10
-                                else candidate_cols
-                            ),
-                        )
-                    logger.info(
-                        "safe_fallback_last_numeric: Evaluating %s candidates with candidate_cols=%s (amount_cols empty: %s)",
-                        len(fallback_candidates),
-                        (
-                            candidate_cols[:10]
-                            if len(candidate_cols) > 10
-                            else candidate_cols
-                        ),
-                        len(amount_cols) == 0,
-                    )
-                    for i in fallback_candidates:
-                        row = df.iloc[i]
-                        numeric_count = sum(
-                            1
-                            for c in candidate_cols
-                            if c not in exclude
-                            and pd.notna(normalize_numeric_column(row.get(c, pd.NA)))
-                            and abs(float(normalize_numeric_column(row.get(c, pd.NA))))
-                            > 0.01
-                        )
-                        # Score: numeric_count * 100 + position_score (prefer later rows)
-                        # Position score: (len(df) - i) / len(df) * 50
-                        position_score = (
-                            ((len(df) - i) / max(len(df), 1)) * 50 if len(df) > 0 else 0
-                        )
-                        score = numeric_count * 100 + position_score
-                        # Bonus if has detail rows above
-                        has_details_above = _has_detail_rows_above(i)
-                        if has_details_above:
-                            score += 25
-                        logger.info(
-                            "safe_fallback_last_numeric candidate idx=%s: numeric_count=%s, position_score=%.1f, has_details_above=%s, total_score=%.1f",
-                            i,
-                            numeric_count,
-                            position_score,
-                            has_details_above,
-                            score,
-                        )
-                        if score > best_score:
-                            best_score = score
-                            best_fallback = i
-                    logger.info(
-                        "safe_fallback_last_numeric: best_fallback=%s, best_score=%.1f",
-                        best_fallback,
-                        best_score,
-                    )
-                    if best_fallback is not None:
-                        row = df.iloc[best_fallback]
-                        numeric_count = sum(
-                            1
-                            for c in candidate_cols
-                            if c not in exclude
-                            and pd.notna(normalize_numeric_column(row.get(c, pd.NA)))
-                            and abs(float(normalize_numeric_column(row.get(c, pd.NA))))
-                            > 0.01
-                        )
-                        if numeric_count >= 1:
-                            logger.info(
-                                "Total row fallback selected: idx=%s, method=safe_fallback_last_numeric, numeric_count=%s, score=%.1f",
-                                best_fallback,
-                                numeric_count,
-                                best_score,
-                            )
-                            self._set_total_row_metadata_on_context(
-                                best_fallback,
-                                "safe_fallback_last_numeric",
-                                exclude_list,
-                                fallback_candidates,
-                                totals_candidates_found=len(fallback_candidates),
-                            )
-                            return best_fallback
-
-                # Third pass: if still no candidates in bottom section, try entire table with relaxed conditions
-                # This handles edge cases where total row might be in middle/upper section
-                if not fallback_candidates:
-                    # For very small tables (< 5 rows), consider all numeric rows
-                    # For larger tables, prefer rows in lower 70% of table
-                    if len(df) < 5:
-                        relaxed_candidates = numeric_rows
-                    else:
-                        relaxed_start = max(0, len(df) // 3)  # Lower 70% of table
-                        relaxed_candidates = [
-                            i for i in numeric_rows if i >= relaxed_start
-                        ]
-
-                    if relaxed_candidates:
-                        # Score candidates: prefer more numeric values and later position
-                        best_relaxed = None
-                        best_relaxed_score: float = -1.0
-                        # If amount_cols is empty, use all columns except label_cols and exclude_cols
-                        candidate_cols = (
-                            amount_cols
-                            if amount_cols
-                            else [
-                                c
-                                for c in df.columns
-                                if c not in label_cols and c not in exclude
-                            ]
-                        )
-                        # Fallback: if candidate_cols is empty (all columns are labels/excluded),
-                        # use all columns except exclude only (allow label columns to be checked)
-                        if not candidate_cols:
-                            candidate_cols = [c for c in df.columns if c not in exclude]
-                            logger.info(
-                                "safe_fallback_relaxed_search: candidate_cols was empty, falling back to all columns except exclude: %s",
-                                (
-                                    candidate_cols[:10]
-                                    if len(candidate_cols) > 10
-                                    else candidate_cols
-                                ),
-                            )
-                        logger.info(
-                            "safe_fallback_relaxed_search: Evaluating %s candidates with candidate_cols=%s (amount_cols empty: %s)",
-                            len(relaxed_candidates),
-                            (
-                                candidate_cols[:10]
-                                if len(candidate_cols) > 10
-                                else candidate_cols
-                            ),
-                            len(amount_cols) == 0,
-                        )
-                        for i in relaxed_candidates:
-                            row = df.iloc[i]
-                            numeric_count = sum(
-                                1
-                                for c in candidate_cols
-                                if c not in exclude
-                                and pd.notna(
-                                    normalize_numeric_column(row.get(c, pd.NA))
-                                )
-                                and abs(
-                                    float(normalize_numeric_column(row.get(c, pd.NA)))
-                                )
-                                > 0.01
-                            )
-                            logger.info(
-                                "safe_fallback_relaxed_search candidate idx=%s: numeric_count=%s",
-                                i,
-                                numeric_count,
-                            )
-                            if numeric_count >= 1:
-                                # Score: numeric_count * 100 + position_score (prefer later rows)
-                                position_score = (
-                                    ((len(df) - i) / max(len(df), 1)) * 50
-                                    if len(df) > 0
-                                    else 0
-                                )
-                                score = numeric_count * 100 + position_score
-                                # Bonus if has detail rows above
-                                has_details_above = _has_detail_rows_above(i)
-                                if has_details_above:
-                                    score += 25
-                                # Bonus if in bottom section
-                                in_bottom = i >= bottom_start
-                                if in_bottom:
-                                    score += 15
-                                logger.info(
-                                    "safe_fallback_relaxed_search candidate idx=%s: numeric_count=%s, position_score=%.1f, has_details_above=%s, in_bottom=%s, total_score=%.1f",
-                                    i,
-                                    numeric_count,
-                                    position_score,
-                                    has_details_above,
-                                    in_bottom,
-                                    score,
-                                )
-                                if score > best_relaxed_score:
-                                    best_relaxed_score = score
-                                    best_relaxed = i
-
-                        logger.info(
-                            "safe_fallback_relaxed_search: best_relaxed=%s, best_relaxed_score=%.1f",
-                            best_relaxed,
-                            best_relaxed_score,
-                        )
-                        if best_relaxed is not None:
-                            # Use candidate_cols if amount_cols is empty
-                            final_candidate_cols = (
-                                amount_cols
-                                if amount_cols
-                                else [
-                                    c
-                                    for c in df.columns
-                                    if c not in label_cols and c not in exclude
-                                ]
-                            )
-                            logger.info(
-                                "Total row relaxed fallback selected: idx=%s, method=safe_fallback_relaxed_search, numeric_count=%s, score=%.1f",
-                                best_relaxed,
-                                sum(
-                                    1
-                                    for c in final_candidate_cols
-                                    if c not in exclude
-                                    and pd.notna(
-                                        normalize_numeric_column(
-                                            df.iloc[best_relaxed].get(c, pd.NA)
-                                        )
-                                    )
-                                    and abs(
-                                        float(
-                                            normalize_numeric_column(
-                                                df.iloc[best_relaxed].get(c, pd.NA)
-                                            )
-                                        )
-                                    )
-                                    > 0.01
-                                ),
-                                best_relaxed_score,
-                            )
-                            self._set_total_row_metadata_on_context(
-                                best_relaxed,
-                                "safe_fallback_relaxed_search",
-                                exclude_list,
-                                relaxed_candidates,
-                                totals_candidates_found=len(relaxed_candidates),
-                            )
-                            return best_relaxed
-
-            # If still no match, return None
-            # Enhanced logging for debugging safe_total_row_selection_no_match cases
-            logger.warning(
-                "Total row not found after all detection methods: "
-                "detected_totals=%s, keyword_candidates=%s, rule_b_candidates=%s, "
-                "rule_b_candidates=%s, numeric_rows=%s, fallback_candidates=%s, "
-                "relaxed_candidates=%s, table_size=%s, label_cols=%s, amount_cols=%s, "
-                "exclude_cols=%s",
-                detected_totals,
-                keyword_candidates,
-                rule_b_candidates,
-                (
-                    numeric_rows[:10]
-                    if numeric_rows and len(numeric_rows) > 10
-                    else (numeric_rows if numeric_rows else [])
-                ),
-                fallback_candidates,
-                relaxed_candidates,
-                len(df),
-                (
-                    label_cols[:5]
-                    if label_cols and len(label_cols) > 5
-                    else (label_cols if label_cols else [])
-                ),
-                (
-                    amount_cols[:5]
-                    if amount_cols and len(amount_cols) > 5
-                    else (amount_cols if amount_cols else [])
-                ),
-                (
-                    exclude_list[:5]
-                    if exclude_list and len(exclude_list) > 5
-                    else (exclude_list if exclude_list else [])
-                ),
-            )
-            # Log sample rows for pattern analysis
-            if len(df) > 0:
-                sample_indices = [0, len(df) // 2, len(df) - 1] if len(df) >= 3 else [0]
-                for idx in sample_indices:
-                    row = df.iloc[idx]
-                    row_sample = {}
-                    for col in list(row.index)[:5]:  # First 5 columns
-                        val = row.get(col, pd.NA)
-                        if pd.notna(val):
-                            row_sample[col] = str(val)[:50]  # Truncate long values
-                    logger.debug(
-                        "Sample row idx=%s: %s",
-                        idx,
-                        row_sample,
-                    )
             self._set_total_row_metadata_on_context(
                 None, "safe_total_row_selection_no_match", exclude_list, []
             )
@@ -1911,7 +1643,16 @@ class BaseValidator(ABC):
             gap_row: Row gap for prior year position
             gap_col: Column gap for prior year position
         """
-        cached_value = cross_check_cache.get(account_name)
+        cache = self.cache_manager or cross_check_cache
+        cached_value = cache.get(account_name)
+        # Parity: allow canonical keys (en-dash) to match ASCII-hyphen cache keys.
+        # Use a tolerant replacement because some sources omit surrounding spaces.
+        if (
+            cached_value is None
+            and isinstance(account_name, str)
+            and "–" in account_name
+        ):
+            cached_value = cache.get(account_name.replace("–", "-"))
         if cached_value is None:
             return  # No cached value to compare against
 
@@ -1933,11 +1674,17 @@ class BaseValidator(ABC):
                     return True
             return False
 
-        if _is_suspicious_magnitude(CY_bal, BSPL_CY_bal) or _is_suspicious_magnitude(
-            PY_bal, BSPL_PY_bal
-        ):
-            logger.debug(f"Cross-check blocked by magnitude check for {account_name}")
-            return
+        flags = get_feature_flags()
+        is_parity_mode = bool(flags.get("legacy_parity_mode", False))
+
+        if not is_parity_mode:
+            if _is_suspicious_magnitude(
+                CY_bal, BSPL_CY_bal
+            ) or _is_suspicious_magnitude(PY_bal, BSPL_PY_bal):
+                logger.debug(
+                    f"Cross-check blocked by magnitude check for {account_name}"
+                )
+                return
 
         # Ticket 9: Section Constraint Validation (Whitelist check)
         # Prevent "Chi phí trả trước" (Short-term) checking against "Chi phí trả trước" (Long-term)
@@ -1970,11 +1717,12 @@ class BaseValidator(ABC):
 
         # Extract table heading from dataframe context if injected by higher level
         current_heading = df.attrs.get("heading", "")
-        if not _validate_section_alignment(account_name, current_heading):
-            logger.debug(
-                f"Cross-check blocked by section constraint alignment check for {account_name}"
-            )
-            return
+        if not is_parity_mode:
+            if not _validate_section_alignment(account_name, current_heading):
+                logger.debug(
+                    f"Cross-check blocked by section constraint alignment check for {account_name}"
+                )
+                return
 
         # P2-L2: Relaxed cross-check for minor diffs (allow +/- 1.0 for rounding)
         TOLERANCE = 1.0
@@ -2029,7 +1777,10 @@ class BaseValidator(ABC):
             issues.append(commentOB)
 
         # Track that this account was cross-checked (tests rely on this global).
-        cross_check_marks.add(account_name)
+        if self.context is not None:
+            self.context.marks.add(account_name)
+        else:
+            cross_check_marks.add(account_name)
 
     def _calculate_severity(
         self, rule_id: str, diff_abs: float = 0.0, is_skipped: bool = False

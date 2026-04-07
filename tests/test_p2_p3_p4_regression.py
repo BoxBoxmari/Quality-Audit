@@ -5,11 +5,11 @@ import pytest
 
 from quality_audit.utils.note_structure import (
     RowType,
-    _classify_row_type,
-    _split_segments,
-    _detect_scopes,
-    analyze_note_table,
     Segment,
+    _classify_row_type,
+    _detect_scopes,
+    _split_segments,
+    analyze_note_table,
 )
 
 
@@ -66,8 +66,8 @@ class TestNBVDerivedSkip:
     """P3 — NBV / carrying amount segments skip roll-forward."""
 
     def test_nbv_segment_emits_info_not_fail(self):
-        from quality_audit.core.rules.movement_equation import MovementEquationRule
         from quality_audit.core.materiality import MaterialityEngine
+        from quality_audit.core.rules.movement_equation import MovementEquationRule
         from quality_audit.utils.note_structure import Segment
 
         rule = MovementEquationRule()
@@ -141,6 +141,6 @@ class TestTaxScopeBaselineExclusion:
         if scopes:
             scope = scopes[0]
             # Row 0 ("Accounting profit before tax") must NOT be in detail_rows
-            assert 0 not in scope.detail_rows, (
-                f"Baseline row 'Accounting profit' should be excluded but found in {scope.detail_rows}"
-            )
+            assert (
+                0 not in scope.detail_rows
+            ), f"Baseline row 'Accounting profit' should be excluded but found in {scope.detail_rows}"

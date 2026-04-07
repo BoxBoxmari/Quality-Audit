@@ -11,7 +11,12 @@ from ...config.validation_rules import get_balance_rules
 from ...utils.chunk_processor import ChunkProcessor
 from ...utils.column_detector import ColumnDetector
 from ...utils.numeric_utils import parse_numeric
-from ..cache_manager import cross_check_cache
+from ..parity.legacy_baseline import (
+    KEY_AP_LONG,
+    KEY_AR_LONG_ASCII,
+    accumulate_net_dta_dtl,
+    update_legacy_combined_keys,
+)
 from .base_validator import BaseValidator, ValidationResult
 
 logger = logging.getLogger(__name__)
@@ -197,12 +202,25 @@ class BalanceSheetValidator(BaseValidator):
                     (c for c in df_norm.columns if str(c).strip().lower() == "code"),
                     None,
                 )
+            # Guardrail: if an explicit "Code" header exists, prefer it over any
+            # inferred non-code column selected by heuristics (e.g., "ASSETS", "Column_0").
+            explicit_code_col = next(
+                (c for c in df_norm.columns if str(c).strip().lower() == "code"), None
+            )
+            if explicit_code_col is not None and (
+                code_col is None or str(code_col).strip().lower() != "code"
+            ):
+                code_col = explicit_code_col
+                metadata["code_column"] = explicit_code_col
+                metadata["effective_code_column"] = explicit_code_col
 
             if not code_col:
                 # Last ditch: try to detect it again if Normalizer missed it (unlikely)
                 from ...utils.table_normalizer import TableNormalizer
 
                 code_col = TableNormalizer._detect_code_column_with_synonyms(df_norm)
+            if not code_col and "__canonical_code__" in df_norm.columns:
+                code_col = "__canonical_code__"
 
             if not code_col:
                 canon = metadata.get("canon_report") or {}
@@ -224,11 +242,11 @@ class BalanceSheetValidator(BaseValidator):
             # Check if table is large enough to use chunked processing
             if len(df_norm) > self.LARGE_TABLE_THRESHOLD:
                 result = self._validate_large_table_chunked(
-                    df_norm, list(df_norm.columns), -1, heading
+                    df_norm, list(df_norm.columns), -1, heading, metadata
                 )
             else:
                 result = self._validate_standard(
-                    df_norm, list(df_norm.columns), -1, heading
+                    df_norm, list(df_norm.columns), -1, heading, metadata
                 )
             result = self._enforce_pass_gating(
                 result,
@@ -257,6 +275,7 @@ class BalanceSheetValidator(BaseValidator):
         header: List[str],
         header_idx: int,
         heading: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> ValidationResult:
         """
         Validate standard-sized balance sheet table (non-chunked).
@@ -273,9 +292,9 @@ class BalanceSheetValidator(BaseValidator):
 
         # Identify columns
         # Code column should be detected by now, but we get it from columns for safety
-        code_col = next(
-            (c for c in tmp.columns if str(c).strip().lower() == "code"), None
-        )
+        code_col = (metadata or {}).get("effective_code_column") or (
+            metadata or {}
+        ).get("code_column")
         # If TableNormalizer identified a different name for code, use it.
         # But _normalize_table_with_metadata doesn't rename the column to "code" automatically?
         # TableNormalizer.normalize_table RETURNS data with found headers as columns.
@@ -328,7 +347,12 @@ class BalanceSheetValidator(BaseValidator):
 
         # Vectorized data extraction and cache operations
         # Normalize codes using vectorized operations
-        tmp["_normalized_code"] = tmp[code_col].apply(self._normalize_code)
+        code_series = (
+            tmp["__canonical_code__"]
+            if "__canonical_code__" in tmp.columns
+            else tmp[code_col]
+        )
+        tmp["_normalized_code"] = code_series.apply(self._normalize_code)
 
         # Filter valid codes
         valid_code_mask = tmp["_normalized_code"].str.match(r"^[0-9]+[A-Z]?$", na=False)
@@ -346,6 +370,7 @@ class BalanceSheetValidator(BaseValidator):
         valid_rows["_py_val"] = valid_rows[prior_col].apply(parse_numeric)
 
         # Build data map for cache operations (still needed for cross-checking)
+        cache = self._active_cross_check_cache()
         data: Dict[str, Any] = {}
         code_rowpos: Dict[str, int] = {}
 
@@ -372,24 +397,40 @@ class BalanceSheetValidator(BaseValidator):
             if note_col and row.get(note_col, "") != "":
                 acc_name = row.get(tmp.columns[0], "").strip().lower()
                 if acc_name:
-                    cross_check_cache.set(acc_name, (cur_val, prior_val))
+                    cache.set(acc_name, (cur_val, prior_val))
                 # Fallback: If account name is empty but Note column has value, cache by code
                 elif code and code in ["141", "149", "251", "252", "253", "254"]:
                     # Cache by code as fallback when Note column exists but account name is missing
-                    cross_check_cache.set(code, (cur_val, prior_val))
+                    cache.set(code, (cur_val, prior_val))
+            elif code in {"131", "211", "311", "331"}:
+                # Keep AR/AP short/long-term codes available for combined legacy mappings.
+                cache.set(code, (cur_val, prior_val))
+                if code == "131":
+                    cache.set(
+                        "accounts receivable from customers", (cur_val, prior_val)
+                    )
+                elif code == "211":
+                    cache.set(KEY_AR_LONG_ASCII, (cur_val, prior_val))
+                elif code == "331":
+                    cache.set(
+                        "short-term accounts payable to suppliers", (cur_val, prior_val)
+                    )
+                elif code == "311":
+                    cache.set(KEY_AP_LONG, (cur_val, prior_val))
             elif code in ["141", "149", "251", "252", "253", "254"]:
                 if code in ["251", "252", "253"]:
                     try:
-                        old_cur, old_pr = cross_check_cache.get(
+                        old_cur, old_pr = cache.get(
                             "investments in other entities"
                         ) or (0.0, 0.0)
-                        cross_check_cache.set(
+                        cache.set(
                             "investments in other entities",
                             (cur_val + old_cur, prior_val + old_pr),
                         )
                     except Exception:
                         pass
-                cross_check_cache.set(code, (cur_val, prior_val))
+                cache.set(code, (cur_val, prior_val))
+            accumulate_net_dta_dtl(cache, code, cur_val, prior_val)
 
             code_rowpos[code] = ridx - tmp.index[0]
 
@@ -401,10 +442,16 @@ class BalanceSheetValidator(BaseValidator):
             pass  # Columns not found, will use defaults
 
         # Use vectorized validation for rules
-        rules = get_balance_rules()
+        use_new_rules, form_signature = self._detect_balance_form_signature(
+            data=data,
+            heading=heading,
+            metadata=metadata or {},
+        )
+        rules = get_balance_rules(use_new_rules=use_new_rules)
         issues, marks = self._validate_balance_sheet_vectorized(
             data, code_rowpos, cur_col, prior_col, header, header_idx, rules
         )
+        update_legacy_combined_keys(cache)
 
         # Generate status
         if not issues:
@@ -427,6 +474,10 @@ class BalanceSheetValidator(BaseValidator):
             root_cause=root_cause,
             table_id="Balance Sheet",
             assertions_count=len(marks),
+            context={
+                "balance_rule_set": "new" if use_new_rules else "old",
+                "balance_form_signature": form_signature,
+            },
         )
 
     def _validate_large_table_chunked(
@@ -435,6 +486,7 @@ class BalanceSheetValidator(BaseValidator):
         header: List[str],
         header_idx: int,
         heading: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> ValidationResult:
         """
         Validate large balance sheet table using chunked processing.
@@ -452,9 +504,9 @@ class BalanceSheetValidator(BaseValidator):
             ValidationResult: Validation results
         """
         # Identify columns (same as standard validation)
-        code_col = next(
-            (c for c in tmp.columns if str(c).strip().lower() == "code"), None
-        )
+        code_col = (metadata or {}).get("effective_code_column") or (
+            metadata or {}
+        ).get("code_column")
         if code_col is None:
             return ValidationResult(
                 status="WARN: Balance sheet - không xác định được cột 'Code'",
@@ -488,6 +540,7 @@ class BalanceSheetValidator(BaseValidator):
             )
 
         # Process in chunks to extract data
+        cache = self._active_cross_check_cache()
         chunk_size = self.LARGE_TABLE_THRESHOLD
         data: Dict[str, Any] = {}
         code_rowpos: Dict[str, int] = {}
@@ -499,7 +552,12 @@ class BalanceSheetValidator(BaseValidator):
             chunk_code_rowpos = {}
 
             # Normalize codes
-            chunk["_normalized_code"] = chunk[code_col].apply(self._normalize_code)
+            code_series = (
+                chunk["__canonical_code__"]
+                if "__canonical_code__" in chunk.columns
+                else chunk[code_col]
+            )
+            chunk["_normalized_code"] = code_series.apply(self._normalize_code)
 
             # Filter valid codes
             valid_code_mask = chunk["_normalized_code"].str.match(
@@ -536,24 +594,40 @@ class BalanceSheetValidator(BaseValidator):
                 if note_col and row.get(note_col, "") != "":
                     acc_name = row.get(tmp.columns[0], "").strip().lower()
                     if acc_name:
-                        cross_check_cache.set(acc_name, (cur_val, prior_val))
+                        cache.set(acc_name, (cur_val, prior_val))
                     # Fallback: If account name is empty but Note column has value, cache by code
                     elif code and code in ["141", "149", "251", "252", "253", "254"]:
                         # Cache by code as fallback when Note column exists but account name is missing
-                        cross_check_cache.set(code, (cur_val, prior_val))
+                        cache.set(code, (cur_val, prior_val))
+                elif code in {"131", "211", "311", "331"}:
+                    # Keep AR/AP short/long-term codes available for combined legacy mappings.
+                    cache.set(code, (cur_val, prior_val))
+                if code == "131":
+                    cache.set(
+                        "accounts receivable from customers", (cur_val, prior_val)
+                    )
+                elif code == "211":
+                    cache.set(KEY_AR_LONG_ASCII, (cur_val, prior_val))
+                elif code == "331":
+                    cache.set(
+                        "short-term accounts payable to suppliers", (cur_val, prior_val)
+                    )
+                elif code == "311":
+                    cache.set(KEY_AP_LONG, (cur_val, prior_val))
                 elif code in ["141", "149", "251", "252", "253", "254"]:
                     if code in ["251", "252", "253"]:
                         try:
-                            old_cur, old_pr = cross_check_cache.get(
+                            old_cur, old_pr = cache.get(
                                 "investments in other entities"
                             ) or (0.0, 0.0)
-                            cross_check_cache.set(
+                            cache.set(
                                 "investments in other entities",
                                 (cur_val + old_cur, prior_val + old_pr),
                             )
                         except Exception:
                             pass
-                    cross_check_cache.set(code, (cur_val, prior_val))
+                    cache.set(code, (cur_val, prior_val))
+                accumulate_net_dta_dtl(cache, code, cur_val, prior_val)
 
                 # Calculate row position relative to original DataFrame
                 chunk_code_rowpos[code] = ridx - base_index
@@ -606,10 +680,16 @@ class BalanceSheetValidator(BaseValidator):
             pass  # Columns not found, will use defaults
 
         # Use vectorized validation for rules (same as standard)
-        rules = get_balance_rules()
+        use_new_rules, form_signature = self._detect_balance_form_signature(
+            data=data,
+            heading=heading,
+            metadata=metadata or {},
+        )
+        rules = get_balance_rules(use_new_rules=use_new_rules)
         issues, marks = self._validate_balance_sheet_vectorized(
             data, code_rowpos, cur_col, prior_col, header, header_idx, rules
         )
+        update_legacy_combined_keys(cache)
 
         # Generate status
         if not issues:
@@ -632,4 +712,47 @@ class BalanceSheetValidator(BaseValidator):
             root_cause=root_cause,
             table_id="Balance Sheet",
             assertions_count=len(marks),
+            context={
+                "balance_rule_set": "new" if use_new_rules else "old",
+                "balance_form_signature": form_signature,
+            },
         )
+
+    def _detect_balance_form_signature(
+        self,
+        data: Dict[str, Tuple[float, float]],
+        heading: Optional[str],
+        metadata: Dict[str, Any],
+    ) -> Tuple[bool, str]:
+        """
+        Detect whether table follows old/new balance form signatures.
+        """
+        if metadata.get("balance_form") in {"new", "old"}:
+            selected = metadata["balance_form"] == "new"
+            return selected, f"metadata:{metadata['balance_form']}"
+
+        codes = set(data.keys())
+        heading_lower = str(heading or "").lower()
+
+        new_form_markers = {
+            "160",
+            "161",
+            "162",
+            "163",
+            "164",
+            "165",
+            "280",
+            "325",
+            "344",
+        }
+        old_form_markers = {"270", "410", "430", "440"}
+        new_hits = len(codes.intersection(new_form_markers))
+        old_hits = len(codes.intersection(old_form_markers))
+
+        if "form b01-dn" in heading_lower and (
+            "tt200" in heading_lower or "2014/tt-btc" in heading_lower
+        ):
+            return True, "heading:tt200_b01dn"
+        if new_hits > old_hits:
+            return True, f"codes:new_hits={new_hits},old_hits={old_hits}"
+        return False, f"codes:new_hits={new_hits},old_hits={old_hits}"

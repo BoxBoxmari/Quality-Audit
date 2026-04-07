@@ -87,17 +87,6 @@ def test_movement_equation_emits_structure_incomplete_when_anchors_missing():
     # Simulate one segment discovered by the movement scanner but with all
     # anchors missing (ob/cb/movement_rows). In movement-by-rows mode this
     # must still yield STRUCTURE_INCOMPLETE.
-    from types import SimpleNamespace
-
-    seg = SimpleNamespace(
-        ob_row_idx=None,
-        cb_row_idx=None,
-        movement_rows=None,
-        segment_name="broken",
-        start_row=0,
-        end_row=2,
-        confidence=1.0,
-    )
     # When the planner explicitly classifies the table as non‑movement,
     # the rule must be gated off and emit no STRUCTURE_INCOMPLETE WARNs.
     evidence_gated = rule.evaluate(
@@ -211,10 +200,13 @@ def test_scoped_totals_without_scopes_produces_skip_info_not_warn():
         if isinstance(getattr(e, "metadata", {}), dict)
         and e.metadata.get("skip_reason") == "SCOPES_NOT_PLANNED"
     ]
-    assert skip_evidence, "Expected SCOPES_NOT_PLANNED skip evidence in scoped-total mode"
+    assert (
+        skip_evidence
+    ), "Expected SCOPES_NOT_PLANNED skip evidence in scoped-total mode"
 
     reason_codes = {getattr(e, "reason_code", None) for e in evidence}
     assert WARN_REASON_SCOPE_UNDETERMINED not in reason_codes
+
 
 def test_fallback_numeric_blocked_for_no_total_note_mode():
     """
@@ -275,4 +267,3 @@ def test_fallback_numeric_runs_when_structure_really_undetermined():
     # We expect a NOTE_STRUCTURE_UNDETERMINED WARN plus an UNVERIFIED marker.
     assert "NOTE_STRUCTURE_UNDETERMINED" in rule_ids
     assert "UNVERIFIED_NUMERIC_TABLE" in rule_ids
-

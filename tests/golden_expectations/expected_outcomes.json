@@ -1,0 +1,29 @@
+{
+  "baseline_source": "reports/aggregate_failures.json",
+  "expected_after_remediation": {
+    "CP_Vietnam_2018": {
+      "income_statement_pass": true,
+      "cash_flow_pass": true,
+      "cash_flow_formula_50_scope": "statement_group",
+      "cash_flow_code_70_reconciled": true,
+      "balance_rule_set_selected": "signature_driven",
+      "combined_keys": {
+        "ar": "accounts receivable from customers-combined",
+        "ap": "accounts payable to suppliers-combined",
+        "net_dta_dtl": "Net_DTA_DTL"
+      }
+    },
+    "CJCGV_2018": {
+      "income_statement_pass": true,
+      "cash_flow_pass": true,
+      "equity_pass": true,
+      "equity_second_balance_anchor_roll_forward": true,
+      "cash_flow_not_routed_to_income": true,
+      "combined_keys": {
+        "ar": "accounts receivable from customers-combined",
+        "ap": "accounts payable to suppliers-combined",
+        "net_dta_dtl": "Net_DTA_DTL"
+      }
+    }
+  }
+}

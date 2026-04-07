@@ -267,6 +267,7 @@ class ColumnDetector:
                 k,
             )
             return None, None
+        return None, None
 
     @staticmethod
     def detect_code_column(df: pd.DataFrame) -> Optional[str]:

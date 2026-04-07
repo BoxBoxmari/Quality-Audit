@@ -67,6 +67,31 @@ Runs audit pipeline on two DOCX paths and writes a report (e.g. reports/after_2d
 python scripts/run_regression_2docs.py <doc1> <doc2> --report-name after_2docs.md --prefix after
 ```
 
+### run_extraction_preflight_gates.py
+
+Canonical preflight gate script for extraction runtime and parity lock.
+
+```bash
+python scripts/run_extraction_preflight_gates.py
+```
+
+Default gate sequence:
+
+- `scripts/check_regression_fixtures.py --strict`
+- `tests/test_run_regression_2docs_defaults.py`
+- `tests/ui/test_ui_ctk_runtime_contract.py`
+- `tests/test_scrum11_contract_tests.py`
+
+Use `--skip-tests` to run only fixture preflight.
+
+### benchmark_mvp.py
+
+Runs MVP benchmark for extraction runtime with timing/memory summary.
+
+```bash
+python scripts/benchmark_mvp.py --help
+```
+
 ### parse_audit_xlsx.py
 
 Parses audit XLSX output for analysis. Check script for input path and output options.

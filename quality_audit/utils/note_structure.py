@@ -118,7 +118,6 @@ _LISTING_HEADING_RE = re.compile(
 )
 
 
-
 def _normalize_text(s: Any) -> str:
     """Lowercase, strip, normalize unicode. Empty/NaN -> ''."""
     if s is None or (isinstance(s, float) and pd.isna(s)):
@@ -257,7 +256,10 @@ def plan_note_validation(
     # Explicit NO_TOTAL semantics from structure_status or heading.  These tables
     # are treated as listings with no expected totals even if incidental numeric
     # patterns appear.
-    if status is StructureStatus.STRUCTURE_NO_TOTAL or heading_lower in TABLES_WITHOUT_TOTAL:
+    if (
+        status is StructureStatus.STRUCTURE_NO_TOTAL
+        or heading_lower in TABLES_WITHOUT_TOTAL
+    ):
         return NoteValidationMode.LISTING_NO_TOTAL
 
     # Listing-style headings can either have no totals at all or have implicit
@@ -474,7 +476,9 @@ def _detect_hierarchical_netting_plan(
         if not row_text:
             continue
         has_less = any(term in row_text for term in _NETTING_LESS_LEXICON)
-        has_net = ("net" in row_text) and not any(ex in row_text for ex in _NETTING_NET_EXCLUDE)
+        has_net = ("net" in row_text) and not any(
+            ex in row_text for ex in _NETTING_NET_EXCLUDE
+        )
         has_total = ("total" in row_text) or ("gross" in row_text)
         if has_total and not has_less and not has_net:
             total_rows.append(idx)
@@ -566,9 +570,7 @@ def _detect_listing_scopes_with_implicit_total(
         if block_end >= block_start:
             # Collect numeric rows within this block.
             numeric_rows = [
-                r
-                for r in range(block_start, block_end + 1)
-                if row_has_numeric[r]
+                r for r in range(block_start, block_end + 1) if row_has_numeric[r]
             ]
             if len(numeric_rows) >= 3:
                 # Consider last 1–2 numeric rows as candidate totals.
@@ -599,8 +601,7 @@ def _detect_listing_scopes_with_implicit_total(
                             for r in detail_rows
                             if col.iloc[r] is not None
                             and not (
-                                isinstance(col.iloc[r], float)
-                                and pd.isna(col.iloc[r])
+                                isinstance(col.iloc[r], float) and pd.isna(col.iloc[r])
                             )
                         ]
                         if len(detail_vals) < 2:
@@ -664,6 +665,9 @@ def _split_segments(
         has_mov = len(movement_rows) >= 1
         fallback_movement = False
         if has_ob and has_cb and not has_mov:
+            # mypy: narrow Optional[int] to int for range() usage.
+            assert ob_idx is not None
+            assert cb_idx is not None
             _excluded = (
                 RowType.BLANK,
                 RowType.SECTION_HEADER,

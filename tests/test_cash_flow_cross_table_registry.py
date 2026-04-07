@@ -2,7 +2,11 @@ import pandas as pd
 import pytest
 
 from quality_audit.config.feature_flags import get_feature_flags as _global_get_flags
-from quality_audit.core.cache_manager import AuditContext, LRUCacheManager
+from quality_audit.core.cache_manager import (
+    AuditContext,
+    LRUCacheManager,
+    cross_check_cache,
+)
 from quality_audit.core.validators.cash_flow_validator import CashFlowValidator
 from quality_audit.services.audit_service import AuditService
 
@@ -62,6 +66,7 @@ class TestCashFlowCrossTableRegistry:
             flags = _global_get_flags().copy()
             flags["cashflow_cross_table_context"] = True
             flags["enable_big4_engine"] = False
+            flags["baseline_authoritative_default"] = False
             return flags
 
         # Enable cross-table context in both AuditService and CashFlowValidator modules
@@ -97,3 +102,64 @@ class TestCashFlowCrossTableRegistry:
         # Validator should be CashFlowValidator and cross-table flag should be set
         assert ctx.get("validator_type") == CashFlowValidator.__name__
         assert ctx.get("cross_table_used") is True
+
+    def test_cashflow_missing_code_column_not_info_skipped(self):
+        """Missing code column in cash flow should not return INFO_SKIPPED."""
+        validator = CashFlowValidator()
+        df = pd.DataFrame(
+            {
+                "Description": ["Operating cash flow", "Investing cash flow"],
+                "CY": [10.0, 20.0],
+                "PY": [8.0, 15.0],
+            }
+        )
+        result = validator.validate(df, "Statement of Cash Flows", table_context={})
+        assert result.rule_id in (
+            "MISSING_CODE_COLUMN",
+            "UNDETERMINED_HEADER_AFTER_CANONICALIZE",
+        )
+        assert result.status_enum == "WARN"
+
+    def test_cashflow_effective_code_column_not_literal_code_header(self):
+        """Code-like first column should be treated as effective code column."""
+        validator = CashFlowValidator()
+        df = pd.DataFrame(
+            {
+                "Unknown": ["20", "30", "40", "50", "60", "61", "70"],
+                "Description": ["a", "b", "c", "d", "e", "f", "g"],
+                "CY": [10.0, 20.0, 30.0, 60.0, 0.0, 0.0, 60.0],
+                "PY": [10.0, 20.0, 30.0, 60.0, 0.0, 0.0, 60.0],
+            }
+        )
+        result = validator.validate(df, "Statement of Cash Flows", table_context={})
+        assert result.context.get("effective_code_column") == "Unknown"
+
+    def test_cashflow_duplicate_codes_are_aggregated(self):
+        """Repeated codes (e.g. repeated adjustments) must aggregate, not overwrite."""
+        validator = CashFlowValidator()
+        df = pd.DataFrame(
+            {
+                "Code": ["01", "02", "03", "04", "05", "05", "06", "07", "08"],
+                "CY": [10.0, 20.0, 30.0, 40.0, 2.0, 3.0, 5.0, 6.0, 116.0],
+                "PY": [10.0, 20.0, 30.0, 40.0, 2.0, 3.0, 5.0, 6.0, 116.0],
+            }
+        )
+        result = validator.validate(df, "Statement of Cash Flows", table_context={})
+        assert result.status.startswith("PASS:")
+
+    def test_cashflow_code70_reconciles_with_cached_cash_equivalent(self):
+        """When FS cash-equivalent evidence exists, code 70 should reconcile to it."""
+        validator = CashFlowValidator()
+        cross_check_cache.clear()
+        cross_check_cache.set("cash and cash equivalents", (60.0, 60.0))
+        df = pd.DataFrame(
+            {
+                "Code": ["20", "30", "40", "50", "60", "61", "70"],
+                "CY": [10.0, 20.0, 30.0, 60.0, 0.0, 0.0, 60.0],
+                "PY": [10.0, 20.0, 30.0, 60.0, 0.0, 0.0, 60.0],
+            }
+        )
+        result = validator.validate(df, "Statement of Cash Flows", table_context={})
+        # Other rule groups may fail on intentionally sparse fixtures;
+        # verify 70 reconciliation itself does not add mismatch.
+        assert "70 reconciliation with cash equivalents" not in result.status

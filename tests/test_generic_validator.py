@@ -3,13 +3,16 @@ Tests for GenericValidator fixed assets and cross-checking tables.
 """
 
 import pandas as pd
+import pytest
 
+from quality_audit.config.feature_flags import FEATURE_FLAGS
 from quality_audit.core.cache_manager import (
     AuditContext,
     cross_check_cache,
     cross_check_marks,
 )
 from quality_audit.core.validators.generic_validator import GenericTableValidator
+from quality_audit.utils.column_detector import ColumnDetector
 
 
 class TestFixedAssetsValidator:
@@ -133,6 +136,68 @@ class TestFixedAssetsValidator:
         # Verify: Should have cross-ref marks for account 223 (prefer context.marks)
         assert validator.context and "223" in validator.context.marks
 
+    def test_fixed_assets_parity_uses_last_column_for_cross_check(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Fail-first parity lock: fixed assets cross-check must use legacy last column semantics."""
+        df = pd.DataFrame(
+            {
+                "Item": [
+                    "Cost",
+                    "Machine 1",
+                    "Total Cost",
+                    "Accumulated depreciation",
+                    "AD detail",
+                    "Total AD",
+                    "Net Book Value",
+                    "Opening balance",
+                    "Closing balance",
+                ],
+                "A": [0, 1, 1, 0, 1, 1, 0, 1, 1],
+                "B": [0, 2, 2, 0, 2, 2, 0, 2, 2],
+                "C": [0, 100, 100, 0, 100, 100, 0, 100, 100],
+            }
+        )
+
+        monkeypatch.setitem(FEATURE_FLAGS, "legacy_parity_mode", True)
+
+        def _wrong_detect(_df):
+            return ("A", "A")
+
+        monkeypatch.setattr(
+            ColumnDetector,
+            "detect_financial_columns_advanced",
+            staticmethod(_wrong_detect),
+        )
+
+        observed: list[tuple[str, float, float]] = []
+
+        def _capture_cross_check(
+            self,
+            _df,
+            _cross_ref_marks,
+            _issues,
+            account_name,
+            CY_bal,
+            PY_bal,
+            *_args,
+            **_kwargs,
+        ):
+            observed.append((str(account_name), float(CY_bal), float(PY_bal)))
+
+        monkeypatch.setattr(
+            GenericTableValidator,
+            "cross_check_with_BSPL",
+            _capture_cross_check,
+        )
+
+        validator = GenericTableValidator(context=AuditContext())
+        validator.validate(df, "tangible fixed assets")
+
+        cost_rows = [row for row in observed if row[0] == "222"]
+        assert cost_rows, "Expected cost cross-check call for account 222"
+        assert cost_rows[0][1] == 100.0
+
 
 class TestCrossCheckTables:
     """Test cross-checking for different table forms."""
@@ -200,3 +265,119 @@ class TestCrossCheckTables:
         )
         assert "revenue deductions" in validator.context.marks
         assert "net revenue (10 = 01 - 02)" in validator.context.marks
+
+    def test_form_2_net_revenue_prefers_detected_total_row_not_last_row(
+        self, monkeypatch
+    ):
+        """Parity lock: FORM_2 net-revenue cross-check must use detected total row."""
+        cross_check_cache.set("revenue from sales of goods", (400.0, 360.0))
+        cross_check_cache.set("revenue deductions", (50.0, 45.0))
+        cross_check_cache.set("net revenue (10 = 01 - 02)", (350.0, 315.0))
+
+        df = pd.DataFrame(
+            {
+                "A": [
+                    "Revenue",
+                    "Item 1",
+                    "",
+                    "Subtotal 1",
+                    "Deductions",
+                    "Item 1",
+                    "",
+                    "Subtotal 2",
+                    "Grand Total",
+                    "Trailing note",
+                ],
+                "B": ["", 400, "", 400, "", 50, "", 50, 350, ""],
+                "C": ["", 360, "", 360, "", 45, "", 45, 315, ""],
+            }
+        )
+
+        ctx = AuditContext()
+        validator = GenericTableValidator(context=ctx)
+        monkeypatch.setattr(validator, "_find_total_row", lambda _df, **_: 8)
+
+        # Isolate FORM_2 handler to lock net-revenue row selection semantics.
+        calls = []
+
+        def _capture_cross_check(
+            _df,
+            cross_ref_marks,
+            _issues,
+            account_name,
+            CY_bal,
+            PY_bal,
+            CY_row,
+            CY_col,
+            gap_row,
+            gap_col,
+        ):
+            calls.append(
+                {
+                    "account_name": account_name,
+                    "CY_bal": CY_bal,
+                    "PY_bal": PY_bal,
+                    "CY_row": CY_row,
+                    "CY_col": CY_col,
+                    "gap_row": gap_row,
+                    "gap_col": gap_col,
+                }
+            )
+            cross_ref_marks.append({"account_name": account_name, "CY_row": CY_row})
+
+        monkeypatch.setattr(validator, "cross_check_with_BSPL", _capture_cross_check)
+
+        cross_ref_marks = []
+        issues = []
+        df_numeric = df.apply(pd.to_numeric, errors="coerce").fillna(0)
+        validator._handle_cross_check_form_2(
+            df=df,
+            df_numeric=df_numeric,
+            heading_lower="revenue from sales of goods and provision of services",
+            end1=2,
+            end2=6,
+            cross_ref_marks=cross_ref_marks,
+            issues=issues,
+        )
+
+        target_calls = [
+            c for c in calls if c["account_name"] == "net revenue (10 = 01 - 02)"
+        ]
+        assert target_calls
+        assert target_calls[0]["CY_row"] == 8
+        assert target_calls[0]["CY_bal"] == 350
+        assert target_calls[0]["PY_bal"] == 315
+
+    def test_form_1_cross_check_prefers_detected_total_row_not_last_row(
+        self, monkeypatch
+    ):
+        """Parity lock: FORM_1 cross-check must use detected total row when present."""
+        df = pd.DataFrame(
+            {
+                "A": [
+                    "Item 1",
+                    "Item 2",
+                    "Subtotal",
+                    "Item 3",
+                    "Grand Total",
+                    "Trailing note",
+                ],
+                "B": [200, 300, 500, 500, 1000, ""],
+                "C": [180, 270, 450, 450, 900, ""],
+            }
+        )
+
+        ctx = AuditContext()
+        validator = GenericTableValidator(context=ctx)
+        monkeypatch.setattr(validator, "_find_total_row", lambda _df, **_: 4)
+
+        result = validator.validate(df, "accounts receivable from customers")
+        cy_marks = [
+            m for m in result.cross_ref_marks if m.get("rule_id") == "CROSS_REF_BSPL_CY"
+        ]
+        py_marks = [
+            m for m in result.cross_ref_marks if m.get("rule_id") == "CROSS_REF_BSPL_PY"
+        ]
+
+        assert cy_marks and py_marks
+        assert all(m.get("ok") for m in cy_marks + py_marks)

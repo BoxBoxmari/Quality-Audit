@@ -3,6 +3,7 @@ Pha 4: Gap report script.
 Reads 2 output xlsx + optional log, writes CSV/Excel with:
   file_name, table_id, heading, proposed_validation, reason
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,15 +20,19 @@ def build_report_rows(inventory: list[dict]) -> list[dict]:
     """Map inventory to gap report rows (file_name, table_id, heading, proposed_validation, reason)."""
     rows = []
     for row in inventory:
-        proposed = (row.get("rule_id") or "").strip() or (row.get("validator_type") or "").strip()
+        proposed = (row.get("rule_id") or "").strip() or (
+            row.get("validator_type") or ""
+        ).strip()
         reason = (row.get("failure_reason_code") or "").strip()
-        rows.append({
-            "file_name": (row.get("file_name") or "").strip(),
-            "table_id": (row.get("table_id") or "").strip(),
-            "heading": (row.get("heading") or "").strip(),
-            "proposed_validation": proposed,
-            "reason": reason,
-        })
+        rows.append(
+            {
+                "file_name": (row.get("file_name") or "").strip(),
+                "table_id": (row.get("table_id") or "").strip(),
+                "heading": (row.get("heading") or "").strip(),
+                "proposed_validation": proposed,
+                "reason": reason,
+            }
+        )
     return rows
 
 
@@ -41,7 +46,9 @@ def write_csv(rows: list[dict], out_path: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Gap report: xlsx + optional log -> CSV/Excel")
+    parser = argparse.ArgumentParser(
+        description="Gap report: xlsx + optional log -> CSV/Excel"
+    )
     parser.add_argument(
         "--xlsx",
         nargs="*",
@@ -57,8 +64,8 @@ def main() -> int:
     parser.add_argument(
         "--out",
         type=Path,
-        default=Path("gap_report.csv"),
-        help="Output CSV path (default: gap_report.csv)",
+        default=Path("reports/gap_report.csv"),
+        help="Output CSV path (default: reports/gap_report.csv)",
     )
     args = parser.parse_args()
 

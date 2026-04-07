@@ -37,20 +37,20 @@ class TestHyperlinkPresence:
         results = service._validate_tables([(df, "Test Table")])
 
         for result in results:
-            assert result.get("table_id"), (
-                f"Missing table_id for result: {result.get('rule_id')}"
-            )
+            assert result.get(
+                "table_id"
+            ), f"Missing table_id for result: {result.get('rule_id')}"
             # Verify format is #{table_id} compatible
             table_id = result.get("table_id")
-            assert table_id.startswith("tbl_"), (
-                f"table_id should start with 'tbl_': {table_id}"
-            )
+            assert table_id.startswith(
+                "tbl_"
+            ), f"table_id should start with 'tbl_': {table_id}"
             # Verify valid for Excel named range (letters, numbers, underscores only)
             import re
 
-            assert re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", table_id), (
-                f"table_id contains invalid chars for Excel named range: {table_id}"
-            )
+            assert re.match(
+                r"^[A-Za-z_][A-Za-z0-9_]*$", table_id
+            ), f"table_id contains invalid chars for Excel named range: {table_id}"
 
     def test_focus_list_hyperlink_format(self):
         """Assert hyperlink format is #'FS casting'!A{r} (SCRUM-8)."""
@@ -112,9 +112,9 @@ class TestHyperlinkPresence:
         link_cell = ws.cell(row=2, column=7)
         # Check Jump column shows "(missing anchor)"
         link_cell = ws.cell(row=2, column=7)
-        assert "(missing anchor)" in str(link_cell.value), (
-            f"Expected '(missing anchor)' text, got: {link_cell.value}"
-        )
+        assert "(missing anchor)" in str(
+            link_cell.value
+        ), f"Expected '(missing anchor)' text, got: {link_cell.value}"
 
     def test_direct_hyperlinks_robustness(self):
         """Verify links use direct cell references via anchor_map (SCRUM-8)."""
@@ -189,9 +189,9 @@ class TestHyperlinkPresence:
             or getattr(font_color, "rgb", None) is None
             or getattr(font_color, "rgb", None) == "00000000"
         )
-        assert is_black_or_default, (
-            f"Validator Type font should be Black or default (not hyperlink blue), got color={font_color}"
-        )
+        assert (
+            is_black_or_default
+        ), f"Validator Type font should be Black or default (not hyperlink blue), got color={font_color}"
         # Let's verify underline
         assert (
             validator_cell.font.underline == "none"
@@ -254,9 +254,9 @@ class TestMaxDiffPopulation:
         ws = wb["Focus List"]
 
         diff_cell = ws.cell(row=2, column=6)
-        assert diff_cell.value == 1000, (
-            f"Expected 1000 (max abs), got: {diff_cell.value}"
-        )
+        assert (
+            diff_cell.value == 1000
+        ), f"Expected 1000 (max abs), got: {diff_cell.value}"
 
     def test_max_diff_from_evidence(self):
         """Assert max_diff is extracted from evidence when marks missing."""
@@ -307,9 +307,9 @@ class TestMaxDiffPopulation:
 
         diff_cell = ws.cell(row=2, column=6)
         # Should parse 789012.50 from status message
-        assert diff_cell.value == pytest.approx(789012.50, rel=0.01), (
-            f"Expected ~789012.50, got: {diff_cell.value}"
-        )
+        assert diff_cell.value == pytest.approx(
+            789012.50, rel=0.01
+        ), f"Expected ~789012.50, got: {diff_cell.value}"
 
     def test_max_diff_none_when_unavailable(self):
         """Assert max_diff is None (not 0) when truly unavailable."""
@@ -334,9 +334,9 @@ class TestMaxDiffPopulation:
         ws = wb["Focus List"]
 
         diff_cell = ws.cell(row=2, column=6)
-        assert diff_cell.value is None, (
-            f"Expected None for unavailable diff, got: {diff_cell.value}"
-        )
+        assert (
+            diff_cell.value is None
+        ), f"Expected None for unavailable diff, got: {diff_cell.value}"
 
 
 class TestConditionalFormattingScope:
@@ -382,22 +382,20 @@ class TestConditionalFormattingScope:
                 assert (
                     cell_b.fill.fill_type == "solid"
                     and cell_b.fill.fgColor.rgb == "00000000"
-                ), (
-                    f"Column B row {row} should have no fill, got: {cell_b.fill.fgColor.rgb}"
-                )
+                ), f"Column B row {row} should have no fill, got: {cell_b.fill.fgColor.rgb}"
 
         # Check column C (Status Enum) has appropriate fills
         for row in range(2, 4):
             cell_c = ws.cell(row=row, column=3)
             status = str(cell_c.value).upper()
             if status == "FAIL":
-                assert cell_c.fill.fill_type == "solid", (
-                    "FAIL cell should have solid fill"
-                )
+                assert (
+                    cell_c.fill.fill_type == "solid"
+                ), "FAIL cell should have solid fill"
             elif status == "PASS":
-                assert cell_c.fill.fill_type == "solid", (
-                    "PASS cell should have solid fill"
-                )
+                assert (
+                    cell_c.fill.fill_type == "solid"
+                ), "PASS cell should have solid fill"
 
 
 class TestAnchorMapCreation:
@@ -439,29 +437,29 @@ class TestAnchorMapCreation:
 
         assert "tbl_002" in writer.anchor_map, "anchor_map should contain tbl_002"
         # Table 2 should be after Table 1
-        assert writer.anchor_map["tbl_002"] > writer.anchor_map["tbl_001"], (
-            "Table 2 should start after Table 1"
-        )
+        assert (
+            writer.anchor_map["tbl_002"] > writer.anchor_map["tbl_001"]
+        ), "Table 2 should start after Table 1"
 
         # Verify hidden column K (11) in Focus List also gets written correctly
         writer.write_focus_list(wb, results)
         ws_focus = wb["Focus List"]
 
         # Check hidden column K
-        assert ws_focus.column_dimensions["K"].hidden is True, (
-            "Column K should be hidden"
-        )
+        assert (
+            ws_focus.column_dimensions["K"].hidden is True
+        ), "Column K should be hidden"
         # Check that table_id is written
-        assert ws_focus.cell(row=2, column=11).value == "tbl_001", (
-            "Column K row 2 should have table_id"
-        )
+        assert (
+            ws_focus.cell(row=2, column=11).value == "tbl_001"
+        ), "Column K row 2 should have table_id"
 
         # Verify FS casting headers have visible ID
         ws_fs = wb["FS casting"]
         header_val = ws_fs.cell(row=writer.anchor_map["tbl_001"], column=1).value
-        assert "[tbl_001]" in str(header_val), (
-            f"Header should contain visible ID, got: {header_val}"
-        )
+        assert "[tbl_001]" in str(
+            header_val
+        ), f"Header should contain visible ID, got: {header_val}"
 
     def test_anchor_map_points_to_fs_casting(self):
         """Assert direct links point to correct cells in FS casting sheet."""
@@ -492,9 +490,9 @@ class TestAnchorMapCreation:
         ws = wb["Focus List"]
         link_target = ws.cell(row=2, column=7).hyperlink.target
 
-        assert f"#'FS casting'!A{row}" == link_target, (
-            f"Hyperlink target mismatch. Expected #'FS casting'!A{row}, got {link_target}"
-        )
+        assert (
+            f"#'FS casting'!A{row}" == link_target
+        ), f"Hyperlink target mismatch. Expected #'FS casting'!A{row}, got {link_target}"
 
 
 class TestSeverityRootCauseDistribution:
@@ -536,9 +534,9 @@ class TestSeverityRootCauseDistribution:
 
         # Should have at least some variety (not all "general")
         if len(root_causes) > 0:
-            assert "general" not in root_causes or len(root_causes) > 1, (
-                f"Root causes should have variety, got: {root_causes}"
-            )
+            assert (
+                "general" not in root_causes or len(root_causes) > 1
+            ), f"Root causes should have variety, got: {root_causes}"
 
     def test_severity_increases_with_diff_magnitude(self):
         """Assert severity increases with diff magnitude for math rules."""
@@ -552,12 +550,12 @@ class TestSeverityRootCauseDistribution:
         sev_order = {"LOW": 1, "MEDIUM": 2, "HIGH": 3}
 
         # Larger diffs should have >= severity
-        assert sev_order.get(sev_large, 0) >= sev_order.get(sev_medium, 0), (
-            f"Large diff severity should be >= medium: {sev_large} vs {sev_medium}"
-        )
-        assert sev_order.get(sev_medium, 0) >= sev_order.get(sev_small, 0), (
-            f"Medium diff severity should be >= small: {sev_medium} vs {sev_small}"
-        )
+        assert sev_order.get(sev_large, 0) >= sev_order.get(
+            sev_medium, 0
+        ), f"Large diff severity should be >= medium: {sev_large} vs {sev_medium}"
+        assert sev_order.get(sev_medium, 0) >= sev_order.get(
+            sev_small, 0
+        ), f"Medium diff severity should be >= small: {sev_medium} vs {sev_small}"
 
 
 class TestTriageColumnUX:
@@ -588,12 +586,12 @@ class TestTriageColumnUX:
         owner_header = ws.cell(row=1, column=8).value
         comment_header = ws.cell(row=1, column=10).value
 
-        assert "user input" in owner_header.lower(), (
-            f"Owner header should mention user input, got: {owner_header}"
-        )
-        assert "user input" in comment_header.lower(), (
-            f"Comment header should mention user input, got: {comment_header}"
-        )
+        assert (
+            "user input" in owner_header.lower()
+        ), f"Owner header should mention user input, got: {owner_header}"
+        assert (
+            "user input" in comment_header.lower()
+        ), f"Comment header should mention user input, got: {comment_header}"
 
     def test_max_diff_column_width_sufficient(self):
         """Assert Max Diff column is wide enough to avoid #######."""
@@ -665,11 +663,11 @@ class TestTriageColumnUX:
         ws_focus = wb["Focus List"]
 
         # Check Row 2 (tbl_001): Should get "StableOwner"
-        assert ws_focus.cell(row=2, column=8).value == "StableOwner", (
-            "Should match by ID even if name changed"
-        )
+        assert (
+            ws_focus.cell(row=2, column=8).value == "StableOwner"
+        ), "Should match by ID even if name changed"
 
         # Check Row 3 (Test Table 2): Should get "LegacyOwner"
-        assert ws_focus.cell(row=3, column=8).value == "LegacyOwner", (
-            "Should fallback to name match"
-        )
+        assert (
+            ws_focus.cell(row=3, column=8).value == "LegacyOwner"
+        ), "Should fallback to name match"

@@ -145,3 +145,46 @@ def test_render_first_not_triggered_when_signals_only_and_ooxml_good(sample_word
             grid, meta = reader._extract_table_with_fallback(sample_word_path, 0, table)
     assert meta.get("engine_attempts") == ["ooxml"]
     assert meta["extractor_engine"] == "ooxml"
+
+
+def test_html_export_fallback_active_before_legacy(sample_word_path):
+    """If OOXML/Python-docx are unusable, HTML export fallback is attempted before legacy."""
+    from unittest.mock import patch
+
+    reader = WordReader()
+    doc = __import__("docx").Document(sample_word_path)
+    table = doc.tables[0]
+
+    class _Unusable:
+        grid = []
+        quality_score = 0.0
+        quality_flags = []
+        failure_reason_code = "UNUSABLE"
+        invariant_violations = []
+
+        @property
+        def is_usable(self):
+            return False
+
+    class _HtmlResult:
+        is_usable = True
+        grid = [["Code", "Current"], ["20", "10"]]
+        quality_score = 0.66
+        quality_flags = ["CONVERSION_FALLBACK"]
+        failure_reason_code = None
+        invariant_violations = []
+        cols = 2
+
+    with patch("quality_audit.io.word_reader.OOXMLTableGridExtractor") as mock_ooxml:
+        mock_ooxml.return_value.extract.return_value = _Unusable()
+        with patch("quality_audit.io.word_reader.PythonDocxExtractor") as mock_docx:
+            mock_docx.return_value.extract.return_value = _Unusable()
+            with patch("quality_audit.io.word_reader.DocxToHtmlExtractor") as mock_html:
+                mock_html.return_value.extract_from_path.return_value = _HtmlResult()
+                grid, meta = reader._extract_table_with_fallback(
+                    sample_word_path, 0, table
+                )
+
+    assert grid == [["Code", "Current"], ["20", "10"]]
+    assert meta["extractor_engine"] == "html_export"
+    assert meta["engine_attempts"] == ["ooxml", "python_docx", "html_export"]

@@ -2,6 +2,13 @@
 Validation rules and business logic for financial statement auditing.
 """
 
+from quality_audit.core.legacy_audit.balance_sheet import (
+    get_balance_rules as _legacy_get_balance_rules,
+)
+from quality_audit.core.legacy_audit.balance_sheet import (
+    get_balance_rules_new as _legacy_get_balance_rules_new,
+)
+
 # Balance Sheet validation rules
 _BALANCE_RULES = {
     "100": ["110", "120", "130", "140", "150"],
@@ -164,4 +171,9 @@ def get_balance_rules(use_new_rules: bool = False) -> dict:
     Returns:
         dict: Balance validation rules
     """
-    return _BALANCE_NEW_RULES if use_new_rules else _BALANCE_RULES
+    # Baseline-authoritative source delegates through legacy_audit_core.
+    return (
+        _legacy_get_balance_rules_new()
+        if use_new_rules
+        else _legacy_get_balance_rules()
+    )

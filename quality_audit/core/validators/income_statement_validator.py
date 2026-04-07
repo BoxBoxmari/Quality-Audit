@@ -4,13 +4,12 @@ Income Statement validator implementation.
 
 import logging
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
 from ...utils.column_detector import ColumnDetector
 from ...utils.numeric_utils import parse_numeric
-from ..cache_manager import cross_check_cache
 from .base_validator import BaseValidator, ValidationResult
 
 logger = logging.getLogger(__name__)
@@ -69,7 +68,10 @@ class IncomeStatementValidator(BaseValidator):
                 )
 
             # Check if normalization succeeded in identifying a Code column
-            code_col = metadata.get("code_column")
+            code_col = metadata.get("effective_code_column") or metadata.get(
+                "code_column"
+            )
+            declared_code_col = metadata.get("declared_code_column")
             if (
                 not code_col
                 and metadata.get("header_row_idx") == -1
@@ -84,6 +86,18 @@ class IncomeStatementValidator(BaseValidator):
                 from ...utils.table_normalizer import TableNormalizer
 
                 code_col = TableNormalizer._detect_code_column_with_synonyms(df_norm)
+            if not code_col and "__canonical_code__" in df_norm.columns:
+                code_col = "__canonical_code__"
+            # Guardrail: if an explicit "Code" header exists, prefer it over any
+            # inferred non-code column selected by heuristics.
+            explicit_code_col = next(
+                (c for c in df_norm.columns if str(c).strip().lower() == "code"), None
+            )
+            if explicit_code_col is not None and (
+                code_col is None or str(code_col).strip().lower() != "code"
+            ):
+                code_col = explicit_code_col
+                declared_code_col = explicit_code_col
 
             if not code_col:
                 canon = metadata.get("canon_report") or {}
@@ -101,14 +115,6 @@ class IncomeStatementValidator(BaseValidator):
                     status_enum="INFO_SKIPPED",
                     context={"failure_reason_code": rule_id, **metadata},
                 )
-
-            # Safety override: if there is an explicit "Code" column, always prefer it.
-            # This validator's cache and rule checks rely on numeric account codes.
-            explicit_code_col = next(
-                (c for c in df_norm.columns if str(c).strip().lower() == "code"), None
-            )
-            if explicit_code_col is not None:
-                code_col = explicit_code_col
 
             # Use normalized dataframe
             tmp = df_norm
@@ -140,8 +146,24 @@ class IncomeStatementValidator(BaseValidator):
                 (c for c in tmp.columns if str(c).strip().lower() == "note"), None
             )
 
-            # Find numeric columns using advanced column detection
-            cur_col, prior_col = ColumnDetector.detect_financial_columns_advanced(tmp)
+            # Find numeric columns using metadata first and exclude effective code columns.
+            cur_col = metadata.get("current_year_column")
+            prior_col = metadata.get("prior_year_column")
+            if (
+                not cur_col
+                or not prior_col
+                or cur_col == code_col
+                or prior_col == code_col
+            ):
+                candidate_cols = [
+                    c
+                    for c in tmp.columns
+                    if c not in {code_col, declared_code_col}
+                    and str(c).strip().lower() not in {"code", "mã", "mã số"}
+                ]
+                cur_col, prior_col = ColumnDetector.detect_financial_columns_advanced(
+                    tmp[candidate_cols] if len(candidate_cols) >= 2 else tmp
+                )
             if cur_col is None or prior_col is None:
                 return ValidationResult(
                     status="FAIL_TOOL_EXTRACT: Không tìm thấy cặp cột CY/PY có đủ numeric evidence",
@@ -159,7 +181,20 @@ class IncomeStatementValidator(BaseValidator):
             custom_formulas: Dict[str, List[str]] = {}
 
             label_cols = metadata.get("label_cols", [])
+            if not label_cols:
+                # Fallback: inspect non-code/non-year textual columns for inline formulas.
+                label_cols = [
+                    c
+                    for c in tmp.columns
+                    if c not in {code_col, cur_col, prior_col}
+                    and not re.search(
+                        r"(20\d{2}|cy|py|năm|year)", str(c), re.IGNORECASE
+                    )
+                ]
+                if not label_cols and len(tmp.columns) > 0:
+                    label_cols = [tmp.columns[0]]
 
+            cache = self._active_cross_check_cache()
             for ridx, row in tmp.iterrows():
                 # P5: Extract custom inline formulas from descriptions
                 if label_cols:
@@ -179,7 +214,7 @@ class IncomeStatementValidator(BaseValidator):
                                 )
                                 break
 
-                code_raw = row.get(code_col)
+                code_raw = row.get("__canonical_code__", row.get(code_col))
                 code = self._normalize_code(code_raw)
                 if not code or not re.match(r"^[0-9]+[A-Z]?$", code):
                     continue
@@ -192,8 +227,8 @@ class IncomeStatementValidator(BaseValidator):
 
                 # Cross-check cache: always store by code (e.g., '50')
                 # For cross_check_cache, we sum up if there are duplicates
-                old_cur, old_pr = cross_check_cache.get(code) or (0.0, 0.0)
-                cross_check_cache.set(code, (old_cur + cur_val, old_pr + prior_val))
+                old_cur, old_pr = cache.get(code) or (0.0, 0.0)
+                cache.set(code, (old_cur + cur_val, old_pr + prior_val))
 
                 # Store account name when there is a Note reference
                 if note_col is not None and str(row.get(note_col, "")).strip() != "":
@@ -209,21 +244,21 @@ class IncomeStatementValidator(BaseValidator):
                     )
                     acc_name = str(row.get(account_col, "")).strip().lower()
                     if acc_name:
-                        old_nm_cur, old_nm_pr = cross_check_cache.get(acc_name) or (
+                        old_nm_cur, old_nm_pr = cache.get(acc_name) or (
                             0.0,
                             0.0,
                         )
-                        cross_check_cache.set(
+                        cache.set(
                             acc_name, (old_nm_cur + cur_val, old_nm_pr + prior_val)
                         )
 
                 # Aggregate codes '51' and '52' into "income tax" (regardless of Note)
                 if code in ["51", "52"]:
-                    old_cur_it, old_pr_it = cross_check_cache.get("income tax") or (
+                    old_cur_it, old_pr_it = cache.get("income tax") or (
                         0.0,
                         0.0,
                     )
-                    cross_check_cache.set(
+                    cache.set(
                         "income tax", (cur_val + old_cur_it, prior_val + old_pr_it)
                     )
 
@@ -305,8 +340,14 @@ class IncomeStatementValidator(BaseValidator):
                 # Template 2: No code 10 -> use alternative formula
                 check("20", ["01", "-02", "-11"])
 
-            # Common rules for both templates
-            check("30", ["20", "21", "-22", "24", "-25", "-26"])
+            code30_children, code30_variant = self._resolve_code_30_formula(
+                data_map=data_map,
+                custom_formulas=custom_formulas,
+                heading=heading,
+                table_context=table_context or {},
+                metadata=metadata,
+            )
+            check("30", code30_children)
             check("40", ["31", "-32"])
             check("50", ["30", "40"])
             check("60", ["50", "-51", "-52"])
@@ -332,6 +373,10 @@ class IncomeStatementValidator(BaseValidator):
                 assertions_count=len(marks),
                 context=metadata,
             )
+            if isinstance(result.context, dict):
+                result.context["declared_code_column"] = declared_code_col
+                result.context["effective_code_column"] = code_col
+                result.context["formula_variant_code_30"] = code30_variant
             result = self._enforce_pass_gating(
                 result,
                 result.assertions_count,
@@ -428,3 +473,42 @@ class IncomeStatementValidator(BaseValidator):
             return None
 
         return target_code, children
+
+    def _resolve_code_30_formula(
+        self,
+        data_map: Dict[str, List[tuple]],
+        custom_formulas: Dict[str, List[str]],
+        heading: Optional[str],
+        table_context: Dict,
+        metadata: Dict,
+    ) -> Tuple[List[str], str]:
+        """
+        Resolve formula for code 30 with deterministic precedence:
+        1) explicit formula parsed from row text
+        2) inferred statement/form signature
+        3) controlled default
+        """
+        explicit = custom_formulas.get("30")
+        if explicit:
+            return explicit, "explicit_formula_text"
+
+        text_sources = [
+            str(heading or ""),
+            str(table_context.get("source") or ""),
+            str(table_context.get("document_name") or ""),
+            str(table_context.get("doc_name") or ""),
+            str(metadata.get("form_signature") or ""),
+        ]
+        source_blob = " ".join(text_sources).lower()
+        has_24 = "24" in data_map
+        has_23 = "23" in data_map
+        has_27 = "27" in data_map
+
+        if "cp" in source_blob or has_24:
+            return ["20", "21", "-22", "24", "-25", "-26"], "cp_variant_plus_24"
+        if "cj" in source_blob or (not has_24 and not has_23 and not has_27):
+            return ["20", "21", "-22", "-25", "-26"], "cj_variant_no_24_23_27"
+
+        # Controlled fallback: prefer CP-like variant because 24 is optional positive
+        # line in several layouts and is less lossy than forcing 23/27 semantics.
+        return ["20", "21", "-22", "24", "-25", "-26"], "fallback_cp_like"

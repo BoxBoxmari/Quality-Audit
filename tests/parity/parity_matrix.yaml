@@ -1,0 +1,51 @@
+version: 1
+cases:
+  CP_Vietnam_2018:
+    source_doc: data/CP Vietnam-FS2018-Consol-EN.docx
+    expected:
+      income_statement:
+        table_type: fs_income_statement
+        validator: IncomeStatementValidator
+        code_30_formula_variant: cp_variant_plus_24
+      cash_flow:
+        table_type: fs_cash_flow
+        validator: CashFlowValidator
+        scope_dependencies:
+          - code: '50'
+            formula: '20+30+40'
+          - code: '70'
+            reconciliation: 'cash_and_cash_equivalents_end_balance'
+      balance_sheet:
+        table_type: fs_balance_sheet
+        validator: BalanceSheetValidator
+        expected_rule_set: old_or_new_by_signature
+      cross_check_keys:
+        ar: accounts receivable from customers-combined
+        ap: accounts payable to suppliers-combined
+        net_dta_dtl: Net_DTA_DTL
+  CJCGV_2018:
+    source_doc: data/CJCGV-FS2018-EN- v2 .DOCX
+    expected:
+      income_statement:
+        table_type: fs_income_statement
+        validator: IncomeStatementValidator
+        code_30_formula_variant: cj_variant_no_24_23_27
+      cash_flow:
+        table_type: fs_cash_flow
+        validator: CashFlowValidator
+        scope_dependencies:
+          - code: '50'
+            formula: '20+30+40'
+          - code: '70'
+            reconciliation: 'cash_and_cash_equivalents_end_balance'
+      equity:
+        table_type: fs_equity
+        validator: EquityValidator
+        semantics: anchor_roll_forward
+known_failures_baseline:
+  source: reports/aggregate_failures.json
+  targets_to_fix:
+    - INCOME_STATEMENT_VALIDATION
+    - CASH_FLOW_VALIDATION
+    - EQUITY_FORMULA_CHECK
+    - NO_NUMERIC_EVIDENCE

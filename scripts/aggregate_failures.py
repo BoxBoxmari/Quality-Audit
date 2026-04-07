@@ -29,6 +29,8 @@ STATUS_ENUM_COL = 3  # 1-based column C
 FAIL_STATUSES = {"FAIL", "FAIL_TOOL_EXTRACT", "FAIL_VALIDATION"}
 WARN_STATUSES = {"WARN"}
 
+AGGREGATE_SCHEMA_VERSION = "1"
+
 # Header indices (1-based) for "Tổng hợp kiểm tra" per excel_writer
 HEADER_NAMES = [
     "Tên bảng",
@@ -128,6 +130,19 @@ def _group_key(row: dict) -> tuple:
     )
 
 
+def build_aggregate_document(
+    all_rows: list[dict],
+    agg_records: list[dict],
+) -> dict:
+    """Build the JSON-serializable aggregate document (schema version + metrics + groups)."""
+    return {
+        "aggregate_schema_version": AGGREGATE_SCHEMA_VERSION,
+        "total_fail_warn_rows": len(all_rows),
+        "group_count": len(agg_records),
+        "groups": agg_records,
+    }
+
+
 def aggregate_from_xlsx_paths(xlsx_paths: list[str], output_path_prefix: str) -> None:
     """
     Read all XLSX, collect FAIL/WARN rows, group by key, write CSV and JSON.
@@ -189,17 +204,9 @@ def aggregate_from_xlsx_paths(xlsx_paths: list[str], output_path_prefix: str) ->
             w.writerow(row)
 
     json_path = prefix.with_suffix(".json")
+    doc = build_aggregate_document(all_rows, agg_records)
     with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "total_fail_warn_rows": len(all_rows),
-                "group_count": len(agg_records),
-                "groups": agg_records,
-            },
-            f,
-            indent=2,
-            ensure_ascii=False,
-        )
+        json.dump(doc, f, indent=2, ensure_ascii=False)
 
 
 def main() -> int:

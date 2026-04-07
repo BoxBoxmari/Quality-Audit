@@ -1,0 +1,10 @@
+{
+  "baseline_meta_schema_version": "1",
+  "frozen_at_utc": "2026-03-22T21:45:02Z",
+  "git_commit_hash": "4bfcc8eb0ec424729ae0f0567ad142bf4be1dcbb",
+  "aggregate_schema_version": "1",
+  "files": {
+    "aggregate_failures_json": "aggregate_failures.json"
+  },
+  "source_prefix": "C:\\Users\\Admin\\Downloads\\Quality Audit Tool\\reports\\aggregate_failures"
+}

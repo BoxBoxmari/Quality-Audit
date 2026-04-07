@@ -8,7 +8,7 @@ with configurable concurrency limits and error handling.
 import asyncio
 from builtins import BaseException
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from .audit_service import AuditService
 
@@ -37,6 +37,7 @@ class BatchProcessor:
         file_paths: List[str],
         output_dir: str,
         output_suffix: str = "_output.xlsx",
+        on_file_complete: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Process multiple files concurrently with semaphore-based concurrency control.
@@ -114,19 +115,24 @@ class BatchProcessor:
         processed_results: List[Dict[str, Any]] = []
         for idx, result in enumerate(results):
             if isinstance(result, Exception):
-                processed_results.append(
-                    {
-                        "success": False,
-                        "error": str(result),
-                        "error_type": type(result).__name__,
-                        "input_file": file_paths[idx],
-                        "output_file": None,
-                        "tables_processed": 0,
-                        "results": [],
-                    }
-                )
+                item = {
+                    "success": False,
+                    "error": str(result),
+                    "error_type": type(result).__name__,
+                    "error_code": "BATCH_PROCESS_EXCEPTION",
+                    "stage": "batch_process",
+                    "input_file": file_paths[idx],
+                    "output_file": None,
+                    "tables_processed": 0,
+                    "results": [],
+                }
+                processed_results.append(item)
+                if on_file_complete is not None:
+                    on_file_complete(item)
             elif isinstance(result, dict):
                 processed_results.append(result)
+                if on_file_complete is not None:
+                    on_file_complete(result)
 
         return processed_results
 

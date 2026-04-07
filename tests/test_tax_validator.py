@@ -116,3 +116,35 @@ class TestTaxValidator:
         # Verify: Should have cross-ref marks for 'income tax'
         [m for m in result.cross_ref_marks if "income tax" in str(m.get("comment", ""))]
         assert "income tax" in cross_check_marks
+
+    @patch("quality_audit.core.validators.tax_validator.get_validated_tax_rate")
+    @patch(
+        "quality_audit.core.validators.tax_validator.ColumnDetector.detect_financial_columns_advanced"
+    )
+    def test_tax_reconciliation_uses_detected_financial_columns(
+        self, mock_detect_columns, mock_tax_rate
+    ):
+        """Parity lock: use detected current/prior year columns instead of hardcoded last-2 columns."""
+        mock_tax_rate.return_value = 0.2
+        mock_detect_columns.return_value = ("FY2024", "FY2023")
+
+        df = pd.DataFrame(
+            {
+                "A": ["Accounting profit before tax", "Tax at rate", "", "Total"],
+                "FY2024": [1000, 200, "", 200],
+                "FY2023": [900, 180, "", 180],
+                "Notes": ["memo", "memo", "", "memo"],
+            }
+        )
+
+        validator = TaxValidator()
+        result = validator.validate(df, "Reconciliation of effective tax rate")
+        cy_marks = [
+            m for m in result.cross_ref_marks if m.get("rule_id") == "CROSS_REF_BSPL_CY"
+        ]
+        py_marks = [
+            m for m in result.cross_ref_marks if m.get("rule_id") == "CROSS_REF_BSPL_PY"
+        ]
+
+        assert cy_marks and py_marks
+        assert all(m.get("ok") for m in cy_marks + py_marks)

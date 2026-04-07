@@ -75,3 +75,75 @@ class TestIncomeStatementCrossCheckCache:
         # Verify: Code '50' should be in cache
         cached_value = cross_check_cache.get("50")
         assert cached_value == (500.0, 450.0)
+
+    def test_code_30_cp_variant_with_plus_24(self):
+        """CP-like variant: 30 = 20 + 21 - 22 + 24 - 25 - 26."""
+        df = pd.DataFrame(
+            {
+                "Account": [
+                    "Code 20",
+                    "Code 21",
+                    "Code 22",
+                    "Code 24",
+                    "Code 25",
+                    "Code 26",
+                    "Code 30",
+                ],
+                "Code": ["20", "21", "22", "24", "25", "26", "30"],
+                "Note": ["", "", "", "", "", "", ""],
+                "2024": [100.0, 20.0, 10.0, 5.0, 15.0, 10.0, 90.0],
+                "2023": [90.0, 10.0, 5.0, 4.0, 9.0, 6.0, 84.0],
+            }
+        )
+
+        validator = IncomeStatementValidator()
+        result = validator.validate(df)
+
+        assert result.status.startswith("PASS:")
+        assert result.context.get("formula_variant_code_30") == "cp_variant_plus_24"
+
+    def test_code_30_cj_variant_without_24_23_27(self):
+        """CJ-like variant: 30 = 20 + 21 - 22 - 25 - 26."""
+        df = pd.DataFrame(
+            {
+                "Account": [
+                    "Code 20",
+                    "Code 21",
+                    "Code 22",
+                    "Code 25",
+                    "Code 26",
+                    "Code 30",
+                ],
+                "Code": ["20", "21", "22", "25", "26", "30"],
+                "Note": ["", "", "", "", "", ""],
+                "2024": [100.0, 20.0, 10.0, 15.0, 10.0, 85.0],
+                "2023": [90.0, 10.0, 5.0, 9.0, 6.0, 80.0],
+            }
+        )
+        validator = IncomeStatementValidator()
+        result = validator.validate(df)
+        assert result.status.startswith("PASS:")
+        assert result.context.get("formula_variant_code_30") == "cj_variant_no_24_23_27"
+
+    def test_code_30_prefers_explicit_row_formula(self):
+        """Explicit inline formula on row text must override inferred variant."""
+        df = pd.DataFrame(
+            {
+                "Account": [
+                    "20",
+                    "21",
+                    "22",
+                    "24",
+                    "25",
+                    "26",
+                    "Lợi nhuận (30 = 20 + 21 - 22 - 25 - 26)",
+                ],
+                "Code": ["20", "21", "22", "24", "25", "26", "30"],
+                "2024": [100.0, 20.0, 10.0, 999.0, 15.0, 10.0, 85.0],
+                "2023": [90.0, 10.0, 5.0, 888.0, 9.0, 6.0, 80.0],
+            }
+        )
+        validator = IncomeStatementValidator()
+        result = validator.validate(df)
+        assert result.status.startswith("PASS:")
+        assert result.context.get("formula_variant_code_30") == "explicit_formula_text"

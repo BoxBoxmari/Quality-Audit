@@ -35,7 +35,11 @@ def _normalize_note_ref(text: Any) -> str:
         return ""
     # "Note 4" / "Thuyết minh số 4" -> "4"
     m = re.search(r"\d+", s)
-    return m.group(0) if m else s
+    if not m:
+        return s
+    digits = m.group(0)
+    # Preserve legacy semantic matching by canonicalizing 04/004 -> 4.
+    return str(int(digits)) if digits.isdigit() else digits
 
 
 def _parse_amount(val: Any) -> float:
@@ -167,15 +171,17 @@ def build_fs_anchor_index(tables_info: list[dict[str, Any]]) -> list[dict[str, A
             for col in amount_cols:
                 amounts_by_period[col] = _parse_amount(row.get(col))
 
-            anchors.append({
-                "statement_type": table_type,
-                "code": code,
-                "label_norm": _normalize_label(label),
-                "note_ref_norm": note_ref_norm,
-                "amounts_by_period": amounts_by_period,
-                "unit_hint": unit_hint,
-                "table_id": t_info.get("table_id", ""),
-            })
+            anchors.append(
+                {
+                    "statement_type": table_type,
+                    "code": code,
+                    "label_norm": _normalize_label(label),
+                    "note_ref_norm": note_ref_norm,
+                    "amounts_by_period": amounts_by_period,
+                    "unit_hint": unit_hint,
+                    "table_id": t_info.get("table_id", ""),
+                }
+            )
     return anchors
 
 
@@ -184,6 +190,8 @@ _NOTE_HEADING_PATTERNS = [
     re.compile(r"note\s+(\d+)", re.IGNORECASE),
     re.compile(r"thuyết minh\s*số\s*(\d+)", re.IGNORECASE),
     re.compile(r"thuyet minh\s*so\s*(\d+)", re.IGNORECASE),
+    # Legacy shorthand appears in headings like "TM 09", "TM.9", "tm số 04"
+    re.compile(r"\btm\.?\s*(?:số|so)?\s*(\d+)\b", re.IGNORECASE),
 ]
 
 

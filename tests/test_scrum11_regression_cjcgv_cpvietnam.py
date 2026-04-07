@@ -195,19 +195,19 @@ class TestSCRUM11RegressionCJCGVCPVietnam:
                 has_link = jump_cell.hyperlink is not None
                 has_fallback = jump_cell.value == "(missing anchor)"
 
-                assert has_link or has_fallback, (
-                    f"Row {row_idx} should have hyperlink or fallback text"
-                )
+                assert (
+                    has_link or has_fallback
+                ), f"Row {row_idx} should have hyperlink or fallback text"
 
                 if has_link:
                     # Verify hyperlink format
                     target = jump_cell.hyperlink.target
-                    assert target.startswith("#"), (
-                        f"Hyperlink should be internal: {target}"
-                    )
-                    assert "'FS casting'" in target or "FS casting" in target, (
-                        f"Hyperlink should point to FS casting: {target}"
-                    )
+                    assert target.startswith(
+                        "#"
+                    ), f"Hyperlink should be internal: {target}"
+                    assert (
+                        "'FS casting'" in target or "FS casting" in target
+                    ), f"Hyperlink should point to FS casting: {target}"
 
         if not has_findings:
             pytest.skip("No FAIL/WARN findings to test hyperlinks")
@@ -253,9 +253,9 @@ class TestSCRUM11RegressionCJCGVCPVietnam:
 
         # Should have at least one non-MEDIUM severity
         non_medium = [s for s in severities if s != "MEDIUM"]
-        assert len(non_medium) > 0, (
-            f"All severities are MEDIUM (defaulting issue). Found: {set(severities)}"
-        )
+        assert (
+            len(non_medium) > 0
+        ), f"All severities are MEDIUM (defaulting issue). Found: {set(severities)}"
 
     def test_root_cause_not_all_general(self, audit_service, test_data_dir, tmp_path):
         """
@@ -296,6 +296,6 @@ class TestSCRUM11RegressionCJCGVCPVietnam:
 
         # Should have at least one non-"general" root cause
         non_general = [rc for rc in root_causes if rc and rc.lower() != "general"]
-        assert len(non_general) > 0, (
-            f"All root causes are 'general' (defaulting issue). Found: {set(root_causes)}"
-        )
+        assert (
+            len(non_general) > 0
+        ), f"All root causes are 'general' (defaulting issue). Found: {set(root_causes)}"

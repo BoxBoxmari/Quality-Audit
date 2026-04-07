@@ -44,10 +44,7 @@ def _check_table_transformer_available() -> bool:
 
 def _load_model():
     """Lazy-load the table transformer model."""
-    global \
-        _TABLE_TRANSFORMER_AVAILABLE, \
-        _TABLE_TRANSFORMER_MODEL, \
-        _TABLE_TRANSFORMER_PROCESSOR
+    global _TABLE_TRANSFORMER_AVAILABLE, _TABLE_TRANSFORMER_MODEL, _TABLE_TRANSFORMER_PROCESSOR
 
     if _TABLE_TRANSFORMER_MODEL is not None:
         return _TABLE_TRANSFORMER_MODEL, _TABLE_TRANSFORMER_PROCESSOR

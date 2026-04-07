@@ -101,10 +101,10 @@ class CashFlowRules(AuditRule):
             ]
 
         # Collect amount_cols from any row which has them
-        amount_cols = set()
+        amount_cols: set[str] = set()
         for r in model.rows:
             amount_cols.update(r.values.keys())
-        amount_cols = list(amount_cols)
+        amount_cols_list: list[str] = sorted(amount_cols)
 
         # Collect table_ids that have at least one CF row (from code 20 or any CF code)
         cf_table_ids = sorted(
@@ -127,7 +127,7 @@ class CashFlowRules(AuditRule):
             row_70 = first_by_table("70", table_id)
             row_08 = first_by_table("08", table_id)
 
-            for col in amount_cols:
+            for col in amount_cols_list:
                 # 1. Code 20 Validation (scoped to this table_id)
                 if row_20:
                     source_rows_items = []

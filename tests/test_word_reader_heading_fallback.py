@@ -16,7 +16,46 @@ def _append_minimal_sect_pr_to_paragraph(paragraph) -> None:
 
 
 class TestWordReaderHeadingFallback:
-    def test_heading_from_table_first_row_when_no_paragraph_heading(self, tmp_path):
+    def test_heading_persists_across_adjacent_tables_without_new_paragraph(
+        self, tmp_path
+    ):
+        """Heading should continue to next table when no explicit boundary exists."""
+        doc_path = tmp_path / "adjacent_tables_heading_continuity.docx"
+        doc = Document()
+
+        heading = doc.add_paragraph("Income Statement")
+        heading.style = doc.styles["Heading 1"]
+
+        t1 = doc.add_table(rows=2, cols=2)
+        t1.cell(0, 0).text = "Revenue"
+        t1.cell(0, 1).text = "100"
+        t1.cell(1, 0).text = "COGS"
+        t1.cell(1, 1).text = "40"
+
+        # No paragraph between tables: heading should remain in effect.
+        t2 = doc.add_table(rows=2, cols=2)
+        t2.cell(0, 0).text = "Operating expense"
+        t2.cell(0, 1).text = "30"
+        t2.cell(1, 0).text = "Profit"
+        t2.cell(1, 1).text = "30"
+
+        doc.save(str(doc_path))
+
+        reader = WordReader()
+        tables = reader.read_tables_with_headings(str(doc_path))
+
+        assert len(tables) == 2
+        _df1, h1, ctx1 = tables[0]
+        _df2, h2, ctx2 = tables[1]
+
+        assert h1 == "Income Statement"
+        assert h2 == "Income Statement"
+        assert ctx1.get("heading_source") == "paragraph"
+        assert ctx2.get("heading_source") == "paragraph"
+
+    def test_heading_from_table_first_row_when_no_paragraph_heading(
+        self, tmp_path, monkeypatch
+    ):
         """
         Table with no preceding paragraphs and descriptive first row
         should use first-row text as heading with heading_source='table_first_row'.
@@ -37,6 +76,10 @@ class TestWordReaderHeadingFallback:
 
         doc.save(str(doc_path))
 
+        monkeypatch.setattr(
+            "quality_audit.io.word_reader.get_feature_flags",
+            lambda: {"heading_fallback_from_table_first_row": True},
+        )
         reader = WordReader()
         tables = reader.read_tables_with_headings(str(doc_path))
 

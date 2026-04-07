@@ -1,5 +1,6 @@
 """
-Validators package for financial statement validation.
+NON-RUNTIME (canonical mode): modular validators are frozen for experimental/
+reference workflows only. Production correctness is owned by legacy/main.py.
 """
 
 from .audit_grade_validator import AuditGradeValidator

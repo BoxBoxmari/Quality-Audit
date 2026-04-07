@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from quality_audit.config.feature_flags import FEATURE_FLAGS
 from quality_audit.core.validators.generic_validator import GenericTableValidator
 from quality_audit.core.validators.tax_validator import TaxValidator
 
@@ -51,6 +52,7 @@ class TestPatternA:
                 "detected",
                 "fallback",
                 "none",
+                "role_based",
             )
 
     @patch.object(GenericTableValidator, "_detect_code_column", return_value=None)
@@ -195,3 +197,68 @@ class TestPatternE:
         result = validator.validate(df, "deferred tax liabilities")
         assert "excluded_columns" in result.context
         assert isinstance(result.context["excluded_columns"], list)
+
+
+class TestG13ColumnTotalParity:
+    """Parity locks for COLUMN_TOTAL_VALIDATION behavior aligned with legacy."""
+
+    def test_g13_total_not_last_column_legacy_parity(self, monkeypatch):
+        """In parity mode, TOTAL header column should be validated even if not last."""
+        df_numeric = pd.DataFrame(
+            {
+                "Desc": ["Line 1", "Line 2"],
+                "A": [2.0, 3.0],
+                "B": [1.0, 4.0],
+                "Total": [3.0, 8.0],
+                "Tail": [999.0, 999.0],
+            }
+        )
+        validator = GenericTableValidator()
+        marks = []
+        issues = []
+
+        monkeypatch.setitem(FEATURE_FLAGS, "legacy_parity_mode", True)
+        validator._validate_column_totals(
+            df_numeric=df_numeric,
+            total_row_idx=1,
+            last_col_idx=4,
+            marks=marks,
+            issues=issues,
+            code_cols=["Desc"],
+        )
+
+        total_col_idx = list(df_numeric.columns).index("Total")
+        assert any(
+            m.get("rule_id") == "COLUMN_TOTAL_VALIDATION"
+            and m.get("col") == total_col_idx
+            for m in marks
+        )
+
+    def test_g13_strict_difference_no_tolerance_in_parity(self, monkeypatch):
+        """Parity mode must use strict equality for column totals."""
+        df_numeric = pd.DataFrame(
+            {
+                "Desc": ["Line 1"],
+                "A": [1000.0],
+                "B": [0.0],
+                "Total": [1008.0],
+            }
+        )
+        validator = GenericTableValidator()
+        marks = []
+        issues = []
+
+        monkeypatch.setitem(FEATURE_FLAGS, "legacy_parity_mode", True)
+        validator._validate_column_totals(
+            df_numeric=df_numeric,
+            total_row_idx=0,
+            last_col_idx=3,
+            marks=marks,
+            issues=issues,
+            code_cols=["Desc"],
+        )
+
+        assert any(
+            m.get("rule_id") == "COLUMN_TOTAL_VALIDATION" and m.get("ok") is False
+            for m in marks
+        )

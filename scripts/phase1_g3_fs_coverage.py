@@ -60,13 +60,17 @@ def main() -> int:
     rows = []
     for file_name in sorted(by_file):
         d = by_file[file_name]
-        rows.append({
-            "file_name": file_name,
-            "has_BS": "1" if d["has_BS"] else "0",
-            "has_IS": "1" if d["has_IS"] else "0",
-            "has_CF": "1" if d["has_CF"] else "0",
-            "all_three_ok": "1" if (d["has_BS"] and d["has_IS"] and d["has_CF"]) else "0",
-        })
+        rows.append(
+            {
+                "file_name": file_name,
+                "has_BS": "1" if d["has_BS"] else "0",
+                "has_IS": "1" if d["has_IS"] else "0",
+                "has_CF": "1" if d["has_CF"] else "0",
+                "all_three_ok": (
+                    "1" if (d["has_BS"] and d["has_IS"] and d["has_CF"]) else "0"
+                ),
+            }
+        )
 
     FS_COVERAGE_CSV.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = ["file_name", "has_BS", "has_IS", "has_CF", "all_three_ok"]

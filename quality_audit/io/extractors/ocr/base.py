@@ -79,3 +79,11 @@ class OCREngine(ABC):
     def engine_type(self) -> str:
         """Return identifier for this OCR engine."""
         pass
+
+    def is_available(self) -> bool:
+        """
+        Whether this OCR engine can be used in the current environment.
+
+        Implementations may override this (e.g., missing native deps).
+        """
+        return True

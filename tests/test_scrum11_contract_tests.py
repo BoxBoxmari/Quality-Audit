@@ -276,6 +276,55 @@ class TestEndToEndPipelineContract:
         for sheet_name in expected_sheets:
             assert sheet_name in wb.sheetnames, f"Missing sheet: {sheet_name}"
 
+    def test_contract_v2_sheets_created(self):
+        """Verify contract v2 sheets are present and internally consistent."""
+        service = AuditService()
+        wb = service.excel_writer.create_workbook()
+        results = [
+            {
+                "status": "PASS",
+                "status_enum": "PASS",
+                "rule_id": "TEST_PASS",
+                "table_id": "tbl_001_test",
+                "table_name": "Table A",
+                "context": {"heading": "Table A", "extractor_engine": "ooxml"},
+            },
+            {
+                "status": "FAIL",
+                "status_enum": "FAIL",
+                "rule_id": "TEST_FAIL",
+                "table_id": "tbl_002_test",
+                "table_name": "Table B",
+                "failure_reason_code": "MATH_EQ",
+                "context": {"heading": "Table B", "quality_score": 0.8},
+            },
+        ]
+        service.excel_writer.write_contract_v2_sheets(wb, results, telemetry=None)
+        assert "Summary" in wb.sheetnames
+        assert "Findings" in wb.sheetnames
+        assert "Metadata" in wb.sheetnames
+        summary_ws = wb["Summary"]
+        findings_ws = wb["Findings"]
+        metadata_ws = wb["Metadata"]
+        # Header + 2 rows in Findings
+        assert findings_ws.max_row == 3
+        # Metadata integrity row must evaluate to True
+        integrity_rows = [
+            row
+            for row in metadata_ws.iter_rows(min_row=2, values_only=True)
+            if row[0] == "integrity_check"
+        ]
+        assert len(integrity_rows) == 1
+        assert integrity_rows[0][1] is True
+        # Summary includes total metric
+        total_rows = [
+            row
+            for row in summary_ws.iter_rows(min_row=2, values_only=True)
+            if row[0] == "Total tables"
+        ]
+        assert len(total_rows) == 1
+        assert total_rows[0][1] == 2
+
 
 class TestSchemaInvariants:
     """Test 5: Schema invariants from SCRUM-5→8."""
@@ -314,9 +363,9 @@ class TestSchemaInvariants:
 
         for rule_id, diff, is_skipped, expected in test_cases:
             severity = validator._calculate_severity(rule_id, diff, is_skipped)
-            assert severity == expected, (
-                f"Rule {rule_id}: expected {expected}, got {severity}"
-            )
+            assert (
+                severity == expected
+            ), f"Rule {rule_id}: expected {expected}, got {severity}"
 
     def test_root_cause_not_all_general(self):
         """Verify root_cause inference produces variety (SCRUM-8)."""
@@ -336,9 +385,9 @@ class TestSchemaInvariants:
 
         for rule_id, context, expected in test_cases:
             root_cause = validator._infer_root_cause(rule_id, context)
-            assert root_cause == expected, (
-                f"Rule {rule_id}: expected {expected}, got {root_cause}"
-            )
+            assert (
+                root_cause == expected
+            ), f"Rule {rule_id}: expected {expected}, got {root_cause}"
 
     def test_max_diff_extraction(self):
         """Verify max_diff is extracted correctly (SCRUM-8)."""

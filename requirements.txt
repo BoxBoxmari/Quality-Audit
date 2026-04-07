@@ -3,6 +3,7 @@ numpy>=1.23.0
 
 openpyxl>=3.0.0
 python-docx>=0.8.11
+customtkinter>=5.2.2
 
 Pillow>=10.0.0
 opencv-python>=4.9.0

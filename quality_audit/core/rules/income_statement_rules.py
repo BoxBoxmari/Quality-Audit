@@ -68,10 +68,10 @@ class IncomeStatementRules(AuditRule):
             ]
 
         # Collect amount_cols from any row which has them
-        amount_cols = set()
+        amount_cols: set[str] = set()
         for r in model.rows:
             amount_cols.update(r.values.keys())
-        amount_cols = list(amount_cols)
+        amount_cols_list: list[str] = sorted(amount_cols)
 
         row_20 = next(iter(model.find_code("20")), None)
         row_30 = next(iter(model.find_code("30")), None)
@@ -97,7 +97,7 @@ class IncomeStatementRules(AuditRule):
             )
         row_24 = val_24_rows[0] if val_24_rows else None
 
-        for col in amount_cols:
+        for col in amount_cols_list:
             # 1. Code 20: CJ (no 10) 20 = 01 - 02 - 11; CP (has 10) 20 = 10 - 11
             if row_20:
                 rows_10 = list(model.find_code("10"))

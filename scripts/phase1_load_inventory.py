@@ -159,11 +159,7 @@ def load_one_xlsx(filepath: Path) -> list[dict]:
         sr = summary_rows[i] if i < len(summary_rows) else {}
         pt = per_table[i] if i < len(per_table) else {}
         table_id = table_ids[i] if i < len(table_ids) else None
-        heading = (
-            sr.get("Tên bảng")
-            or pt.get("Heading")
-            or ""
-        )
+        heading = sr.get("Tên bảng") or pt.get("Heading") or ""
         if isinstance(heading, float):
             heading = "" if heading != heading else str(int(heading))
         else:
@@ -189,19 +185,21 @@ def load_one_xlsx(filepath: Path) -> list[dict]:
         else:
             assertions_count = None
 
-        inventory.append({
-            "file_name": file_name,
-            "table_index": i + 1,
-            "table_id": table_id or "",
-            "heading": heading,
-            "table_type": table_type,
-            "status_enum": status_enum,
-            "status_category": status_category,
-            "rule_id": rule_id,
-            "validator_type": validator_type,
-            "failure_reason_code": failure_reason_code,
-            "assertions_count": assertions_count,
-        })
+        inventory.append(
+            {
+                "file_name": file_name,
+                "table_index": i + 1,
+                "table_id": table_id or "",
+                "heading": heading,
+                "table_type": table_type,
+                "status_enum": status_enum,
+                "status_category": status_category,
+                "rule_id": rule_id,
+                "validator_type": validator_type,
+                "failure_reason_code": failure_reason_code,
+                "assertions_count": assertions_count,
+            }
+        )
     return inventory
 
 

@@ -85,51 +85,61 @@ def main() -> int:
     for fn in sorted(inv_by_file):
         lines.append(f"| {fn} | {inv_by_file[fn]} |")
 
-    lines.extend([
-        "",
-        "### By table_type",
-        "",
-        "| table_type | count |",
-        "|------------|-------|",
-    ])
+    lines.extend(
+        [
+            "",
+            "### By table_type",
+            "",
+            "| table_type | count |",
+            "|------------|-------|",
+        ]
+    )
     for tt in sorted(inv_by_type):
         lines.append(f"| {tt} | {inv_by_type[tt]} |")
 
-    lines.extend([
-        "",
-        "### By status_enum",
-        "",
-        "| status_enum | count |",
-        "|-------------|-------|",
-    ])
+    lines.extend(
+        [
+            "",
+            "### By status_enum",
+            "",
+            "| status_enum | count |",
+            "|-------------|-------|",
+        ]
+    )
     for st in sorted(inv_by_status):
         lines.append(f"| {st} | {inv_by_status[st]} |")
 
-    lines.extend([
-        "",
-        "## 2. G1 List (GENERIC_NOTE/TAX_NOTE, PASS, assertions_count=0)",
-        "",
-        f"- **Total G1 tables**: {len(g1_rows)}",
-        "",
-        "### By file",
-        "",
-        "| file_name | count | table_ids |",
-        "|-----------|-------|-----------|",
-    ])
+    lines.extend(
+        [
+            "",
+            "## 2. G1 List (GENERIC_NOTE/TAX_NOTE, PASS, assertions_count=0)",
+            "",
+            f"- **Total G1 tables**: {len(g1_rows)}",
+            "",
+            "### By file",
+            "",
+            "| file_name | count | table_ids |",
+            "|-----------|-------|-----------|",
+        ]
+    )
     for fn in sorted(g1_by_file):
         ids = g1_by_file[fn]
         ids_short = ", ".join(ids[:5]) + ("..." if len(ids) > 5 else "")
         lines.append(f"| {fn} | {len(ids)} | {ids_short} |")
 
-    lines.extend([
-        "",
-        "## 3. G3 FS Coverage (B01/B02/B03 = BS/IS/CF)",
-        "",
-        f"- **Files with all three FS PASS + assertions**: {fs_ok} / {len(fs_rows)}",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "## 3. G3 FS Coverage (B01/B02/B03 = BS/IS/CF)",
+            "",
+            f"- **Files with all three FS PASS + assertions**: {fs_ok} / {len(fs_rows)}",
+            "",
+        ]
+    )
     if fs_missing:
-        lines.append("Files missing at least one of BS/IS/CF (PASS + assertions_count>0):")
+        lines.append(
+            "Files missing at least one of BS/IS/CF (PASS + assertions_count>0):"
+        )
         lines.append("")
         for fn in fs_missing:
             lines.append(f"- {fn}")

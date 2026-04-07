@@ -58,7 +58,9 @@ def read_summary(path: Path) -> pd.DataFrame:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Dump results/*.xlsx summary to CSV/JSON")
+    parser = argparse.ArgumentParser(
+        description="Dump results/*.xlsx summary to CSV/JSON"
+    )
     parser.add_argument(
         "--out-dir",
         type=Path,
@@ -96,7 +98,11 @@ def main() -> None:
             continue
         # Select known columns + any extra; preserve order
         cols = [c for c in SUMMARY_COLUMNS if c in df.columns]
-        extra = [c for c in df.columns if c not in SUMMARY_COLUMNS and not str(c).startswith("_")]
+        extra = [
+            c
+            for c in df.columns
+            if c not in SUMMARY_COLUMNS and not str(c).startswith("_")
+        ]
         use = cols + extra + ["_source_file"]
         use = [c for c in use if c in df.columns]
         df = df[use]

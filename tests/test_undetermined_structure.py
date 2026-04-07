@@ -25,9 +25,9 @@ class TestUndeterminedStructure:
         # No OB/CB/Movement patterns → segments have confidence 0
         assert result.is_movement_table is False
         for seg in result.segments:
-            assert seg.confidence < SEGMENT_CONFIDENCE_THRESHOLD, (
-                f"Expected low confidence for unrecognized segment, got {seg.confidence}"
-            )
+            assert (
+                seg.confidence < SEGMENT_CONFIDENCE_THRESHOLD
+            ), f"Expected low confidence for unrecognized segment, got {seg.confidence}"
 
     def test_unstructured_table_empty_scopes(self):
         """P4: Table without total/subtotal rows but ≥3 rows → conservative scope uses last numeric row."""

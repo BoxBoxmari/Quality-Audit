@@ -352,8 +352,8 @@ class AuditGradeValidator:
                 continue
 
             # Group tables by their specific table_type
-            table_types = list(
-                {t.get("table_type") for t in statement_tables if t.get("table_type")}
+            table_types: list[str] = sorted(
+                {str(t.get("table_type")) for t in statement_tables if t.get("table_type")}
             )
 
             for t_type in table_types:
@@ -397,9 +397,9 @@ class AuditGradeValidator:
                                 rule_evidence = rule.evaluate(
                                     df=t["df"],
                                     materiality=self.materiality,
-                                    table_type=t.get("table_type"),
-                                    table_id=t.get("table_id"),
-                                    code_col=t.get("code_col"),
+                                    table_type=str(t.get("table_type") or ""),
+                                    table_id=str(t.get("table_id") or ""),
+                                    code_col=str(t.get("code_col") or ""),
                                     amount_cols=t.get("amount_cols", []),
                                     total_row_idx=t.get("total_row_idx"),
                                     detail_rows=t.get("detail_rows"),

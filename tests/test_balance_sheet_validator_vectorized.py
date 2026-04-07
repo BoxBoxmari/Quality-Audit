@@ -6,6 +6,8 @@ import pandas as pd
 import pytest
 
 from quality_audit.config.validation_rules import get_balance_rules
+from quality_audit.core.cache_manager import cross_check_cache
+from quality_audit.core.parity.legacy_baseline import KEY_AP_LONG, KEY_AR_LONG_ASCII
 from quality_audit.core.validators.balance_sheet_validator import BalanceSheetValidator
 
 
@@ -102,3 +104,47 @@ class TestBalanceSheetValidatorVectorized:
 
         # Vectorized should be reasonably fast (less than 1 second for 1000 items)
         assert vectorized_time < 1.0, f"Vectorized operation took {vectorized_time}s"
+
+    def test_ar_ap_semantic_aliases_cached_for_legacy_parity(self, validator):
+        """Parity lock: code-based AR/AP rows also populate semantic cache aliases."""
+        cross_check_cache.clear()
+        df = pd.DataFrame(
+            {
+                "code": ["131", "211", "331", "311"],
+                "account_name": [
+                    "Short-term receivables",
+                    "Long-term receivables",
+                    "Short-term payables",
+                    "Long-term payables",
+                ],
+                "2024": [100.0, 40.0, 70.0, 30.0],
+                "2023": [80.0, 20.0, 55.0, 25.0],
+            }
+        )
+
+        validator.validate(df, "Balance sheet")
+
+        assert cross_check_cache.get("accounts receivable from customers") == (
+            100.0,
+            80.0,
+        )
+        assert cross_check_cache.get(KEY_AR_LONG_ASCII) == (40.0, 20.0)
+        assert cross_check_cache.get("short-term accounts payable to suppliers") == (
+            70.0,
+            55.0,
+        )
+        assert cross_check_cache.get(KEY_AP_LONG) == (30.0, 25.0)
+
+    def test_detect_balance_form_signature_prefers_new_rules_when_new_codes_present(
+        self, validator
+    ):
+        data = {
+            "160": (100.0, 90.0),
+            "161": (40.0, 35.0),
+            "280": (1000.0, 900.0),
+        }
+        use_new, signature = validator._detect_balance_form_signature(
+            data=data, heading="Balance sheet", metadata={}
+        )
+        assert use_new is True
+        assert "new_hits" in signature or "heading" in signature

@@ -123,17 +123,25 @@ class TaxValidator(BaseValidator):
         issues: List[str] = []
         marks: List[Dict] = []
         cross_ref_marks: List[Dict] = []
+        current_year_col, prior_year_col = (
+            ColumnDetector.detect_financial_columns_advanced(df)
+        )
+        if current_year_col is None or prior_year_col is None:
+            current_year_col = df.columns[-2]
+            prior_year_col = df.columns[-1]
+        current_year_idx = df.columns.get_loc(current_year_col)
+        prior_year_idx = df.columns.get_loc(prior_year_col)
 
         # Cross-check accounting profit/(loss) before tax with BSPL
         current_year_balance = (
             0
-            if pd.isna(df_numeric.iloc[profit_row_idx, len(df.columns) - 2])
-            else df_numeric.iloc[profit_row_idx, len(df.columns) - 2]
+            if pd.isna(df_numeric.iloc[profit_row_idx, current_year_idx])
+            else df_numeric.iloc[profit_row_idx, current_year_idx]
         )
         prior_year_balance = (
             0
-            if pd.isna(df_numeric.iloc[profit_row_idx, len(df.columns) - 1])
-            else df_numeric.iloc[profit_row_idx, len(df.columns) - 1]
+            if pd.isna(df_numeric.iloc[profit_row_idx, prior_year_idx])
+            else df_numeric.iloc[profit_row_idx, prior_year_idx]
         )
         marks_set = self.context.marks if self.context else set()
         if account_name not in marks_set:
@@ -145,7 +153,7 @@ class TaxValidator(BaseValidator):
                 current_year_balance,
                 prior_year_balance,
                 profit_row_idx,
-                len(df.columns) - 2,
+                current_year_idx,
                 0,
                 -1,
             )
@@ -311,13 +319,13 @@ class TaxValidator(BaseValidator):
             account_name = "income tax"
             current_year_balance = (
                 0
-                if pd.isna(df_numeric.iloc[len(df) - 1, len(df.columns) - 2])
-                else df_numeric.iloc[len(df) - 1, len(df.columns) - 2]
+                if pd.isna(df_numeric.iloc[len(df) - 1, current_year_idx])
+                else df_numeric.iloc[len(df) - 1, current_year_idx]
             )
             prior_year_balance = (
                 0
-                if pd.isna(df_numeric.iloc[len(df) - 1, len(df.columns) - 1])
-                else df_numeric.iloc[len(df) - 1, len(df.columns) - 1]
+                if pd.isna(df_numeric.iloc[len(df) - 1, prior_year_idx])
+                else df_numeric.iloc[len(df) - 1, prior_year_idx]
             )
             marks_set = self.context.marks if self.context else set()
             if account_name not in marks_set:
@@ -329,7 +337,7 @@ class TaxValidator(BaseValidator):
                     current_year_balance,
                     prior_year_balance,
                     len(df) - 1,
-                    len(df.columns) - 2,
+                    current_year_idx,
                     0,
                     -1,
                 )

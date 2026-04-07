@@ -71,7 +71,13 @@ Nếu bật đường DOCX → PDF → ảnh → OCR để trích bảng phức 
 
 ### Command Line Mode
 
-Process all .docx files in a folder:
+Process all .docx files in a folder (canonical entrypoint):
+
+```bash
+python -m quality_audit.cli /path/to/input/folder
+```
+
+Backward-compatible launcher:
 
 ```bash
 python main.py /path/to/input/folder
@@ -107,8 +113,16 @@ Launch the user-friendly terminal-themed GUI:
 ```bash
 run_gui.bat
 # OR
-python -m quality_audit.ui.tk_cli_gui
+python -m quality_audit.ui_ctk
 ```
+
+### Runtime and flow policy
+
+- Use a single project runtime at `./.venv`.
+- Main execution flow uses package `quality_audit` only.
+- `legacy/` is reference-only and must not be used as runtime/test entrypoint in the main flow.
+- Baseline authoritative sources are locked to `legacy/main.py` and `legacy/Quality Audit.py`.
+- Runtime must not import legacy scripts directly; baseline rules are ported under `quality_audit/core/legacy_audit/`.
 
 **GUI Features:**
 

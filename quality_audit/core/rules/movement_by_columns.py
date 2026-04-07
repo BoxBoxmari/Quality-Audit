@@ -138,4 +138,3 @@ class MovementByColumnsRule(AuditRule):
                 break
 
         return evidence_list
-

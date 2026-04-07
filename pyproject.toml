@@ -21,6 +21,8 @@ ignore = [
     "E501", # line too long, handled by black
     "B008", # do not perform function calls in argument defaults
     "C901", # too complex
+    "UP006", # keep typing aliases compatible with current code style/py38 baseline
+    "UP045", # keep Optional[...] style until full typing modernization pass
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -29,6 +31,7 @@ ignore = [
     "F401", # unused imports
     "F403", # import *
     "F405", # import * usage
+    "F841", # unused locals (legacy code hygiene only)
     "F821", # undefined name (legacy code may have missing definitions)
     "N801", # invalid class name
     "N802", # invalid function name
@@ -39,6 +42,7 @@ ignore = [
     "N816", # mixedCase variable in global scope
     "N817",   # camelcase imported as constant
     "E722",   # bare except
+    "E701",   # multiple statements on one line (legacy style)
     "SIM102", # nested if in legacy code
     "SIM108", # ternary suggestions in legacy code
     "B007",   # unused loop control variable in legacy code
@@ -99,3 +103,6 @@ warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
 exclude = ["legacy", "tests", ".agent"]
+
+[tool.quality_audit]
+ui_runtime = "customtkinter>=5.2.2"

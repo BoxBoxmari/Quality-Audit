@@ -92,11 +92,11 @@ class TestQualityAuditGolden:
                 "INFO",
                 "FAIL",
                 "WARN",
-            ), (
-                f"CJ tbl_{tbl_num:03d} expected FAIL_TOOL_EXTRACT or INFO_SKIPPED, got {status_enum}"
-            )
+            ), f"CJ tbl_{tbl_num:03d} expected FAIL_TOOL_EXTRACT or INFO_SKIPPED, got {status_enum}"
 
-    @pytest.mark.skip(reason="Pha 3.1: bỏ auto-PASS cho note chưa triển khai; tbl_004 hiện PASS")
+    @pytest.mark.skip(
+        reason="Pha 3.1: bỏ auto-PASS cho note chưa triển khai; tbl_004 hiện PASS"
+    )
     def test_cp_vietnam_tbl_004_not_pass_when_no_numeric_evidence(
         self, audit_service, test_data_dir, tmp_path
     ):
@@ -208,9 +208,13 @@ class TestQualityAuditGolden:
             f"tbl_017 expected non-INFO_SKIPPED or has evidence: "
             f"status_enum={status_enum} assertions_count={assertions} reason_code={reason_code}"
         )
-        assert status_enum in ("PASS", "FAIL", "WARN", "INFO_SKIPPED", "INFO"), (
-            f"tbl_017 unexpected status_enum={status_enum}"
-        )
+        assert status_enum in (
+            "PASS",
+            "FAIL",
+            "WARN",
+            "INFO_SKIPPED",
+            "INFO",
+        ), f"tbl_017 unexpected status_enum={status_enum}"
 
     def test_cp_vietnam_tbl_018_movement_evidence(
         self, audit_service, test_data_dir, tmp_path
@@ -234,9 +238,13 @@ class TestQualityAuditGolden:
         assert "status" in r
         assert "status_enum" in r
         assert "assertions_count" in r
-        assert status_enum in ("PASS", "FAIL", "WARN", "INFO_SKIPPED", "INFO"), (
-            f"tbl_018 unexpected status_enum={status_enum}"
-        )
+        assert status_enum in (
+            "PASS",
+            "FAIL",
+            "WARN",
+            "INFO_SKIPPED",
+            "INFO",
+        ), f"tbl_018 unexpected status_enum={status_enum}"
 
     def test_warn_result_includes_reason_code(
         self, audit_service, test_data_dir, tmp_path
@@ -259,9 +267,9 @@ class TestQualityAuditGolden:
                 continue
             ctx = r.get("context") or {}
             reason_code = ctx.get("reason_code")
-            assert reason_code is not None, (
-                f"tbl {r.get('table_id')} has status_enum WARN but no context.reason_code"
-            )
-            assert reason_code in WARN_REASON_CODES, (
-                f"tbl {r.get('table_id')} WARN reason_code={reason_code!r} not in WARN_REASON_CODES"
-            )
+            assert (
+                reason_code is not None
+            ), f"tbl {r.get('table_id')} has status_enum WARN but no context.reason_code"
+            assert (
+                reason_code in WARN_REASON_CODES
+            ), f"tbl {r.get('table_id')} WARN reason_code={reason_code!r} not in WARN_REASON_CODES"

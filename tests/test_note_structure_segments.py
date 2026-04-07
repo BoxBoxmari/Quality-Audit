@@ -109,9 +109,9 @@ class TestNoteStructureSegments:
             for s in result.segments
             if s.ob_row_idx is not None and s.cb_row_idx is not None
         ]
-        assert len(segments_with_ob_cb) >= 2, (
-            f"Expected >= 2 segments with OB+CB, got {len(segments_with_ob_cb)}"
-        )
+        assert (
+            len(segments_with_ob_cb) >= 2
+        ), f"Expected >= 2 segments with OB+CB, got {len(segments_with_ob_cb)}"
 
     def test_no_total_like_row_gives_empty_scopes(self):
         """P4: Table without TOTAL_LIKE row → scopes=[]."""
@@ -126,9 +126,9 @@ class TestNoteStructureSegments:
         df = pd.DataFrame(data)
         result = analyze_note_table(df, heading="Test", table_id="002")
         # No TOTAL_LIKE row → scopes must be empty (not defaulting last row)
-        assert result.scopes == [], (
-            f"Expected empty scopes without TOTAL_LIKE, got {result.scopes}"
-        )
+        assert (
+            result.scopes == []
+        ), f"Expected empty scopes without TOTAL_LIKE, got {result.scopes}"
         # P5: movement patterns are still detected even when we cannot find a
         # TOTAL_LIKE row, so this is treated as a movement rollforward without
         # scopes rather than a generic undetermined note.
@@ -166,7 +166,9 @@ class TestNoteStructureSegments:
         # Heading corresponds to constants.TABLES_WITHOUT_TOTAL entry
         heading = "Non-cash investing activities"
         result = analyze_note_table(df, heading=heading, table_id="005")
-        assert result.scopes == [], f"Expected no scopes for NO_TOTAL heading, got {result.scopes}"
+        assert (
+            result.scopes == []
+        ), f"Expected no scopes for NO_TOTAL heading, got {result.scopes}"
         # Phase 1/2 semantics: explicit NO_TOTAL heading → STRUCTURE_NO_TOTAL + LISTING_NO_TOTAL
         assert (
             result.structure_status == StructureStatus.STRUCTURE_NO_TOTAL
@@ -202,7 +204,9 @@ class TestNoteStructureSegments:
         assert (
             result.validation_mode == NoteValidationMode.LISTING_TOTALS
         ), f"Expected LISTING_TOTALS for heading {heading!r}, got {result.validation_mode}"
-        assert result.scopes, "Expected at least one scope for implicit total listing table"
+        assert (
+            result.scopes
+        ), "Expected at least one scope for implicit total listing table"
         scope = result.scopes[0]
         assert scope.total_row_idx == 2
         assert scope.detail_rows == [0, 1]
@@ -216,14 +220,18 @@ class TestNoteStructureSegments:
             "Closing balance": [150, 180],
         }
         df = pd.DataFrame(data)
-        result = analyze_note_table(df, heading="Movement by columns", table_id="MBC_001")
+        result = analyze_note_table(
+            df, heading="Movement by columns", table_id="MBC_001"
+        )
 
         assert isinstance(result, NoteStructureResult)
         assert (
             result.validation_mode == NoteValidationMode.MOVEMENT_BY_COLUMNS
         ), f"Expected MOVEMENT_BY_COLUMNS, got {result.validation_mode}"
         plan = result.note_validation_plan
-        assert plan is not None, "Expected a note_validation_plan payload for MOVEMENT_BY_COLUMNS"
+        assert (
+            plan is not None
+        ), "Expected a note_validation_plan payload for MOVEMENT_BY_COLUMNS"
         assert plan.get("ob_col") == "Opening balance"
         assert plan.get("cb_col") == "Closing balance"
         assert plan.get("movement_cols") == ["Increase", "Decrease"]

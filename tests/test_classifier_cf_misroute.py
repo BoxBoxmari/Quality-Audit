@@ -25,9 +25,9 @@ class TestCFSubTableMisroute:
         ]
         df = pd.DataFrame(rows, columns=["Code", "Description"])
         result = classifier.classify(df, heading=None)
-        assert result.table_type == TableType.FS_CASH_FLOW, (
-            f"Expected FS_CASH_FLOW but got {result.table_type}"
-        )
+        assert (
+            result.table_type == TableType.FS_CASH_FLOW
+        ), f"Expected FS_CASH_FLOW but got {result.table_type}"
 
     def test_shared_codes_21_27_30_not_misrouted_to_is(self, classifier):
         """Table with codes {21,27,30} having CF-exclusive 27 → must NOT be IS."""
@@ -39,9 +39,9 @@ class TestCFSubTableMisroute:
         df = pd.DataFrame(rows, columns=["Code", "Description"])
         result = classifier.classify(df, heading=None)
         # 27 is CF-exclusive → IS fallback should be blocked
-        assert result.table_type != TableType.FS_INCOME_STATEMENT, (
-            f"Should NOT be IS but got {result.table_type}"
-        )
+        assert (
+            result.table_type != TableType.FS_INCOME_STATEMENT
+        ), f"Should NOT be IS but got {result.table_type}"
 
     def test_is_codes_with_is_exclusive_classifies_as_income_statement(
         self, classifier
@@ -55,9 +55,9 @@ class TestCFSubTableMisroute:
         ]
         df = pd.DataFrame(rows, columns=["Code", "Description"])
         result = classifier.classify(df, heading=None)
-        assert result.table_type == TableType.FS_INCOME_STATEMENT, (
-            f"Expected FS_INCOME_STATEMENT but got {result.table_type}"
-        )
+        assert (
+            result.table_type == TableType.FS_INCOME_STATEMENT
+        ), f"Expected FS_INCOME_STATEMENT but got {result.table_type}"
 
     def test_mixed_codes_no_exclusives_uses_count_ratio(self, classifier):
         """Table with only shared codes (no exclusives) → classifier uses count ratio."""

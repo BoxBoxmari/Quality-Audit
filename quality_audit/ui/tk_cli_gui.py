@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import queue
 import sys
@@ -19,6 +20,8 @@ from quality_audit.ui.styles import (
     SPACING,
     apply_dark_theme,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class RedirectText:
@@ -76,9 +79,9 @@ class QualityAuditGUI(tk.Tk):
         # Tax rate data model
         self.tax_rates: dict[str, float] = {}  # key = file path, value = rate
         self.default_tax_rate: float = 25.0  # from bulk_rate_var
-        self.tax_rate_errors: dict[
-            str, str
-        ] = {}  # key = file path, value = error message
+        self.tax_rate_errors: dict[str, str] = (
+            {}
+        )  # key = file path, value = error message
         self.tax_edit_entry: ttk.Entry | None = None  # current editing entry overlay
         self.tax_edit_item: str | None = None  # current editing item ID
 
@@ -1826,8 +1829,9 @@ RUN START: {timestamp}
 
         try:
             exit_code = cli_main(argv)
-        except Exception as e:
-            print(f"GUI Error: {e}")
+        except Exception:
+            logger.debug("GUI execution error in _run_cli_thread", exc_info=True)
+            print("GUI Error: An unexpected internal error occurred.")
         finally:
             sys.stdout = old_out
             sys.stderr = old_err
@@ -1964,8 +1968,11 @@ Files: {file_count}
                     )
                     self._open_path_in_os(self._last_output_dir)
 
-            except Exception as e:
-                self.summary_text.insert("end", f"Auto-open error: {e}\n")
+            except Exception:
+                logger.debug("Auto-open failed in GUI summary workflow", exc_info=True)
+                self.summary_text.insert(
+                    "end", "Auto-open error: Unable to open generated output.\n"
+                )
 
         self.summary_text.config(state="disabled")
 

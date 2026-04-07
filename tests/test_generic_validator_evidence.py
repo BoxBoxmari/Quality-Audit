@@ -46,6 +46,30 @@ class TestEvidenceGate:
             if not expect_column_totals:
                 assert result.status_enum in ("PASS", "INFO", "FAIL", "WARN")
 
+    def test_evidence_gate_no_early_info_in_parity_mode(self, validator):
+        """In parity mode, evidence gate must not early-return INFO soft-skip."""
+        with patch(
+            "quality_audit.core.validators.generic_validator.get_feature_flags"
+        ) as gff:
+            gff.return_value = {
+                "generic_evidence_gate": True,
+                "legacy_parity_mode": True,
+                "movement_rollforward": False,
+            }
+            df = pd.DataFrame(
+                {
+                    "A": ["", "100", "Total"],
+                    "B": [100, 200, 300],
+                    "Other": [100, 200, 300],
+                }
+            )
+            result = validator.validate(df, "Balance Sheet")
+            assert result is not None
+            assert not (
+                result.status_enum == "INFO"
+                and (result.context or {}).get("no_total_evidence_skip") is True
+            )
+
 
 class TestDetectMovementStructure:
     """_detect_movement_structure returns ob_row, cb_row, movement_rows when first column has OB/CB labels."""

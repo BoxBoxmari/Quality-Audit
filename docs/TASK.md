@@ -4,6 +4,30 @@
 
 - **Inputs:** `data/CP Vietnam-FS2018-Consol-EN.docx`, `data/CJCGV-FS2018-EN- v2 .DOCX`
 - **Pipeline:** `scripts/run_regression_2docs.py` → audit 2 DOCX → XLSX in `reports/` → `scripts/aggregate_failures.py` → `reports/aggregate_failures.{csv,json}`
+- **Parity / baseline:** Hợp đồng parity: `docs/PARITY_CONTRACT.md`, ma trận hỗ trợ: `docs/PARITY_SUPPORTED_MATRIX.md`, **chính sách baseline và quy trình so sánh aggregate:** `docs/parity/baseline-policy.md` (gồm `legacy_parity_mode`, tiêu chí baseline, in/out of scope, gợi ý UTF-8 trên Windows).
+
+### Fixture / kho lưu trữ (E2E regression)
+
+Các tệp DOCX mẫu **không có trong clone sạch** của repo: `.gitignore` đang bỏ qua `*.docx` và thư mục `data/`, nên đường dẫn trong Context chỉ hợp lệ khi người dùng **tự đặt file cục bộ** (hoặc đổi chính sách ignore nếu team cho phép lưu fixture đã được làm sạch).
+
+**Decision hiện tại:** dùng **local-only fixtures** (không commit DOCX vào repo chính). Trước khi chạy E2E, bắt buộc chạy preflight:
+
+```powershell
+python scripts/check_regression_fixtures.py --strict
+```
+
+Nếu preflight fail, không coi regression là pass.
+
+**Cách chạy E2E khi có file:** tạo thư mục `data/` ở root project, copy hai DOCX vào đúng tên như Context, rồi chạy các lệnh trong mục Verification Commands. Có thể truyền đường dẫn tuyệt đối khác nếu script/CLI hỗ trợ tham số đường dẫn.
+
+**Phân giải mặc định (không truyền `doc1`/`doc2`):** `scripts/run_regression_2docs.py` gọi `resolve_default_doc_paths(root)` — chỉ chấp nhận cặp khi **cả hai** nằm trong **cùng một** thư mục cơ sở; thứ tự ưu tiên thư mục (dưới root): `data/` → `tests/test_data/` → `tests/data/` → `test_data/`. Quy tắc tên:
+
+- **CP:** ưu tiên đúng basename `CP Vietnam-FS2018-Consol-EN.docx`; nếu thiếu, quét thư mục tìm cùng stem với phần mở rộng `.docx` không phân biệt hoa thường.
+- **CJCGV:** ưu tiên `CJCGV-FS2018-EN- v2.docx`, sau đó `CJCGV-FS2018-EN- v2 .docx` (khoảng trắng trước `.docx`); `.docx` không phân biệt hoa thường; nếu không khớp đường dẫn tuyệt đối thì quét thư mục theo stem tương ứng.
+
+Nếu không thư mục nào đủ cặp, script in gợi ý trên stderr và thoát mã 1 — khi đó phải truyền đủ hai đường dẫn DOCX.
+
+**Trạng thái xác minh EQUITY_FORMULA_CHECK:** logic đã khóa bằng pytest (`tests/test_equity_validator*.py`, `tests/test_scrum6_regression.py`). **Aggregate trên 2 DOCX thật** chỉ được coi là đóng vòng sau khi chạy được `run_regression_2docs.py` + `aggregate_failures` với fixture cục bộ.
 - **Baseline (last run):** 45 FAIL/WARN rows, 11 groups. Logic-related: COLUMN_TOTAL_VALIDATION (keyword_total_row 2, rule_b 4, rule_c 6, safe_total_row_no_match 18), TABLE_NO_TOTAL_ROW 3, EQUITY_FORMULA_CHECK 2, FIXED_ASSET_VALIDATION 1, GenericTableValidator_VALIDATION 3; extraction: NO_NUMERIC_EVIDENCE 2, FAIL_TOOL_EXTRACT_* 4.
 - **Latest (candidate_cols_fallback_fix):** 32 FAIL/WARN rows. COLUMN_TOTAL_VALIDATION (safe_total_row_selection_no_match: 0, safe_fallback_last_numeric: 4, safe_fallback_relaxed_search: 1). Improvement: eliminated all safe_total_row_selection_no_match cases (100% reduction from 6 to 0) via candidate_cols fallback logic.
 - **Scope:** Fix **logic/calculation** errors (total row detection, column total validation, equity formula, fixed asset). Extraction/classification (NO_NUMERIC_EVIDENCE, FAIL_TOOL_EXTRACT) may be out of scope unless they block logic verification.
@@ -33,10 +57,12 @@
 ## Verification Commands
 
 ```powershell
-cd "c:\Users\Admin\Downloads\Quality Audit (1)\Quality Audit"
+cd "c:\Users\Admin\Downloads\Quality Audit Tool"
 python scripts/run_regression_2docs.py "data/CP Vietnam-FS2018-Consol-EN.docx" "data/CJCGV-FS2018-EN- v2 .DOCX" --output-dir reports --report-name after_2docs.md --prefix after
 python -c "import json; d=json.load(open('reports/aggregate_failures.json')); print('groups', d['group_count'], 'fail_warn', d['total_fail_warn_rows'])"
 pytest tests/test_generic_validator.py tests/test_total_row_selection.py -q --tb=short
+pytest tests/test_equity_validator.py tests/test_equity_validator_dynamic_header.py tests/test_scrum6_regression.py -q --tb=short
+pytest tests/test_run_regression_2docs_defaults.py -q --tb=short
 ```
 
 ## Exit Criteria
@@ -53,7 +79,7 @@ pytest tests/test_generic_validator.py tests/test_total_row_selection.py -q --tb
 | COLUMN_TOTAL_VALIDATION (safe_fallback_relaxed_search) | 1 | New: third-pass fallback successfully catching additional edge cases |
 | COLUMN_TOTAL_VALIDATION (keyword_total_row, rule_b, rule_c) | 13 | Addressed per-table metadata; remaining are table-specific mismatches |
 | TABLE_NO_TOTAL_ROW | 0 | ✅ **RESOLVED**: All tables now have total rows detected |
-| EQUITY_FORMULA_CHECK | 2 | Logic: formula/tolerance; accept or tune in equity_validator |
+| EQUITY_FORMULA_CHECK | 0 (mục tiêu sau remediation) | Logic TOE: cắt `iloc[1:toe_idx]` khớp legacy (bỏ cột nhãn). Đã xanh: `pytest tests/test_equity_validator.py tests/test_equity_validator_dynamic_header.py tests/test_scrum6_regression.py` (28 passed). **Cần xác nhận** bằng `run_regression_2docs.py` + `aggregate_failures` trên 2 DOCX |
 | GenericTableValidator_VALIDATION | 3 | Generic rules; accept or extend rules |
 | FIXED_ASSET_VALIDATION | 1 | Logic: one table; accept or tune |
 | NO_NUMERIC_EVIDENCE, FAIL_TOOL_EXTRACT_* | 6 | Out of scope: extraction/evidence |

@@ -1,0 +1,34 @@
+{
+  "CP_Vietnam_2018": {
+    "core_tables": {
+      "income_statement": {
+        "classifier": "fs_income_statement",
+        "validator": "IncomeStatementValidator"
+      },
+      "cash_flow": {
+        "classifier": "fs_cash_flow",
+        "validator": "CashFlowValidator"
+      },
+      "balance_sheet": {
+        "classifier": "fs_balance_sheet",
+        "validator": "BalanceSheetValidator"
+      }
+    }
+  },
+  "CJCGV_2018": {
+    "core_tables": {
+      "income_statement": {
+        "classifier": "fs_income_statement",
+        "validator": "IncomeStatementValidator"
+      },
+      "cash_flow": {
+        "classifier": "fs_cash_flow",
+        "validator": "CashFlowValidator"
+      },
+      "equity": {
+        "classifier": "fs_equity",
+        "validator": "EquityValidator"
+      }
+    }
+  }
+}

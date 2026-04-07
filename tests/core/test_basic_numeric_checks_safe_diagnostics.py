@@ -76,4 +76,3 @@ def test_vertical_sum_heuristic_totals_only_emit_info():
     # Heuristic totals are downgraded to INFO-only diagnostics.
     assert ev.is_material is False
     assert ev.severity == Severity.INFO
-

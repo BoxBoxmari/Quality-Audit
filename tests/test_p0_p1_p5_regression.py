@@ -1,4 +1,4 @@
-"""Tests for P0: BUILD_STAMP, P1: render-first always_off, P5: float code normalization."""
+"""Tests for P0: BUILD_STAMP, P1: render-first signals_only, P5: float code normalization."""
 
 import importlib
 
@@ -17,14 +17,14 @@ class TestBuildStamp:
         assert len(quality_audit.BUILD_STAMP) > 0
 
 
-class TestRenderFirstAlwaysOff:
-    """P1 — render-first mode default is always_off."""
+class TestRenderFirstSignalsOnly:
+    """P1 - render-first mode default is signals_only."""
 
-    def test_default_mode_is_always_off(self):
+    def test_default_mode_is_signals_only(self):
         from quality_audit.config.feature_flags import get_feature_flags
 
         flags = get_feature_flags()
-        assert flags.get("extraction_render_first_triggered_mode") == "always_off"
+        assert flags.get("extraction_render_first_triggered_mode") == "signals_only"
 
 
 class TestFloatCodeNormalization:
@@ -46,9 +46,9 @@ class TestFloatCodeNormalization:
         df = pd.DataFrame(data)
         fp = fp_engine.extract(df)
         # After P5 normalization, "21", "22", "30" should be in found_codes
-        assert "21" in fp.found_codes, (
-            f"Expected '21' in found_codes but got {fp.found_codes}"
-        )
+        assert (
+            "21" in fp.found_codes
+        ), f"Expected '21' in found_codes but got {fp.found_codes}"
         assert "22" in fp.found_codes
         assert "30" in fp.found_codes
 

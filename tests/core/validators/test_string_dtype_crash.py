@@ -38,9 +38,9 @@ class TestAsNumericSeriesStringDtype:
         """Row with string[python] dtype should convert to numeric Series."""
         df = _string_dtype_df()
         row = df.iloc[0]
-        assert str(row.dtype) == "string", (
-            f"Precondition: dtype should be string, got {row.dtype}"
-        )
+        assert (
+            str(row.dtype) == "string"
+        ), f"Precondition: dtype should be string, got {row.dtype}"
 
         # Reproduce the fix: astype(object) before mutation
         s = row.astype(object).copy()
@@ -80,9 +80,9 @@ class TestDfMapNormalizeStringDtype:
     def test_map_normalize_no_crash(self):
         """DataFrame.map(normalize_numeric_column) after astype(object) should succeed."""
         df = _string_dtype_df()
-        assert all(str(df[c].dtype) == "string" for c in df.columns), (
-            "Precondition: all string dtype"
-        )
+        assert all(
+            str(df[c].dtype) == "string" for c in df.columns
+        ), "Precondition: all string dtype"
 
         result = df.astype(object).map(normalize_numeric_column)
         # CY column should have numeric values
@@ -113,6 +113,6 @@ class TestGenericValidatorStringDtype:
         validator = GenericTableValidator()
         result = validator.validate(df, heading="Test table")
 
-        assert result.status_enum != "FAIL_TOOL_LOGIC", (
-            f"Validator crashed with FAIL_TOOL_LOGIC: {result.exception_message}"
-        )
+        assert (
+            result.status_enum != "FAIL_TOOL_LOGIC"
+        ), f"Validator crashed with FAIL_TOOL_LOGIC: {result.exception_message}"

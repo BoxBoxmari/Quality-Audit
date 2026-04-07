@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from ..config.feature_flags import get_feature_flags
 from .column_detector import ColumnDetector
 from .numeric_utils import normalize_numeric_column
 
@@ -249,33 +248,6 @@ def infer_column_roles(
 
     chosen_numeric = [c for c in columns if roles.get(c) == ROLE_NUMERIC]
     excluded_code = [c for c in columns if roles.get(c) == ROLE_CODE]
-
-    # Group 3/4 fallback: when no chosen_numeric, treat last two non-CODE columns as NUMERIC if density > 0.1
-    if (
-        not chosen_numeric
-        and len(columns) >= 2
-        and get_feature_flags().get("use_last_two_columns_fallback", False)
-    ):
-        non_code = [c for c in columns if roles.get(c) != ROLE_CODE]
-        if len(non_code) >= 2:
-            last_two = non_code[-2:]
-            densities = [
-                evidence_per_col.get(c, {}).get("numeric_density", 0) for c in last_two
-            ]
-            if all(d >= 0.1 for d in densities):
-                for c in last_two:
-                    roles[c] = ROLE_NUMERIC
-                    confidences[c] = min(
-                        0.7,
-                        0.5
-                        + evidence_per_col.get(c, {}).get("numeric_density", 0) * 0.4,
-                    )
-                chosen_numeric = [c for c in columns if roles.get(c) == ROLE_NUMERIC]
-                logger.info(
-                    "table_id=%s use_last_two_columns_fallback: chosen_numeric_columns=%s",
-                    table_id,
-                    chosen_numeric,
-                )
 
     evidence = {
         "per_column": evidence_per_col,

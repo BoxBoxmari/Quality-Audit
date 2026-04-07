@@ -2,8 +2,12 @@
 """
 P0: Run Quality Audit pipeline on two DOCX files for baseline/regression.
 
-Accepts paths via CLI (--doc1, --doc2 or positional). If not provided,
-tries tests/test_data or tests/data for CJCGV and CP Vietnam fixtures.
+Accepts paths via CLI (positional doc1, doc2). If not provided, resolves defaults
+via ``resolve_default_doc_paths(project_root)``: searches, in order,
+``data/``, ``tests/test_data``, ``tests/data``, ``test_data/`` for a complete
+pair (CP Vietnam exact name; CJCGV with alias preference, case-insensitive
+``.docx``). Returns ``[]`` if no single directory contains both files.
+
 Writes reports/baseline_2docs.md and optionally runs aggregate_failures on outputs.
 """
 
@@ -30,19 +34,103 @@ from quality_audit.config.tax_rate import TaxRateConfig  # noqa: E402
 from quality_audit.core.cache_manager import AuditContext  # noqa: E402
 from quality_audit.services.audit_service import AuditService  # noqa: E402
 
+# Default fixture basenames (CP exact; CJCGV: prefer no space before extension)
+_CP_DOCX_NAME = "CP Vietnam-FS2018-Consol-EN.docx"
+_CJCGV_ALIAS_PRIMARY = "CJCGV-FS2018-EN- v2.docx"
+_CJCGV_ALIAS_SPACE_BEFORE_EXT = "CJCGV-FS2018-EN- v2 .docx"
+_CJCGV_STEM_PRIMARY = Path(_CJCGV_ALIAS_PRIMARY).stem
+_CJCGV_STEM_SPACE = Path(_CJCGV_ALIAS_SPACE_BEFORE_EXT).stem
+
+
+def _is_docx_file(path: Path) -> bool:
+    return path.is_file() and path.suffix.lower() == ".docx"
+
+
+def _find_cp_docx(base: Path) -> Path | None:
+    """Resolve CP fixture under ``base``: exact basename, else scan (``.docx`` case-insensitive)."""
+    exact = base / _CP_DOCX_NAME
+    if exact.is_file():
+        return exact
+    expected_stem = Path(_CP_DOCX_NAME).stem
+    if not base.is_dir():
+        return None
+    for candidate in base.iterdir():
+        if not _is_docx_file(candidate):
+            continue
+        if candidate.stem == expected_stem:
+            return candidate
+    return None
+
+
+def _find_cjcgv_docx(base: Path) -> Path | None:
+    """
+    Resolve CJCGV under ``base``: prefer ``CJCGV-FS2018-EN- v2.docx``, then ``… v2 .docx``;
+    extension matched case-insensitively; scan directory if exact paths missing.
+    """
+    if not base.is_dir():
+        return None
+    for name in (_CJCGV_ALIAS_PRIMARY, _CJCGV_ALIAS_SPACE_BEFORE_EXT):
+        p = base / name
+        if p.is_file():
+            return p
+    # Case-insensitive extension: try same stems with any .docx spelling
+    for candidate in base.iterdir():
+        if not _is_docx_file(candidate):
+            continue
+        if (
+            candidate.name == _CJCGV_ALIAS_PRIMARY
+            or candidate.stem == _CJCGV_STEM_PRIMARY
+        ):
+            return candidate
+    for candidate in base.iterdir():
+        if not _is_docx_file(candidate):
+            continue
+        if (
+            candidate.name == _CJCGV_ALIAS_SPACE_BEFORE_EXT
+            or candidate.stem == _CJCGV_STEM_SPACE
+        ):
+            return candidate
+    return None
+
+
+def resolve_default_doc_paths(root: Path) -> list[Path]:
+    """
+    Return ``[cp_path, cjcgv_path]`` both ``.resolve()``'d, or ``[]`` if no directory has both.
+
+    Search order (relative to ``root``): ``data/``, ``tests/test_data``, ``tests/data``,
+    ``test_data/``. Both files must live in the same base directory.
+    """
+    candidates = [
+        root / "data",
+        root / "tests" / "test_data",
+        root / "tests" / "data",
+        root / "test_data",
+    ]
+    for base in candidates:
+        if not base.is_dir():
+            continue
+        cp = _find_cp_docx(base)
+        cj = _find_cjcgv_docx(base)
+        if cp is not None and cj is not None:
+            return [cp.resolve(), cj.resolve()]
+    return []
+
 
 def _default_doc_paths() -> list[Path]:
-    """Resolve default 2 DOCX paths from tests/test_data or tests/data."""
-    for base in (_project_root / "tests", _project_root):
-        test_data = base / "test_data"
-        if not test_data.exists():
-            test_data = base / "data"
-        if test_data.exists():
-            doc1 = test_data / "CP Vietnam-FS2018-Consol-EN.docx"
-            doc2 = test_data / "CJCGV-FS2018-EN- v2.docx"
-            if doc1.exists() and doc2.exists():
-                return [doc1, doc2]
-    return []
+    """Resolve default 2 DOCX paths via :func:`resolve_default_doc_paths`."""
+    return resolve_default_doc_paths(_project_root)
+
+
+def _default_doc_resolution_hint() -> str:
+    """Human-readable hint when CLI omits paths and :func:`resolve_default_doc_paths` returns []."""
+    return (
+        "Không tìm thấy cặp DOCX mặc định trong cùng một thư mục (theo thứ tự ưu tiên từ root "
+        "project): data/ → tests/test_data/ → tests/data/ → test_data/.\n"
+        f"  • CP: đúng tên `{_CP_DOCX_NAME}` (hoặc cùng stem, phần mở rộng .docx không phân biệt hoa thường).\n"
+        f"  • CJCGV: ưu tiên `{_CJCGV_ALIAS_PRIMARY}`, sau đó `{_CJCGV_ALIAS_SPACE_BEFORE_EXT}` "
+        "(có thể quét thư mục nếu không khớp đường dẫn tuyệt đối).\n"
+        "Hoặc truyền đủ 2 đường dẫn: python scripts/run_regression_2docs.py <doc1.docx> <doc2.docx>"
+    )
 
 
 def run_regression(
@@ -178,19 +266,26 @@ def run_regression(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="P0: Run Quality Audit on 2 DOCX files for baseline/regression."
+        description=(
+            "P0: Run Quality Audit on 2 DOCX files for baseline/regression. "
+            "Omit both positional args to auto-resolve defaults via resolve_default_doc_paths: "
+            "search data/, tests/test_data/, tests/data/, test_data/ (same directory must contain both)."
+        )
     )
     parser.add_argument(
         "doc1",
         nargs="?",
         type=Path,
-        help="First DOCX path (optional if defaults exist under tests/test_data)",
+        help=(
+            "First DOCX. Omit both doc1 and doc2 to use defaults (CP exact name; CJCGV alias order) "
+            "from data/ → tests/test_data/ → tests/data/ → test_data/"
+        ),
     )
     parser.add_argument(
         "doc2",
         nargs="?",
         type=Path,
-        help="Second DOCX path (optional)",
+        help="Second DOCX (omit with doc1 only if you intend to rely on defaults for the full pair)",
     )
     parser.add_argument(
         "--output-dir",
@@ -229,11 +324,11 @@ def main() -> int:
             print(f"Using default paths: {doc_paths[0]}, {doc_paths[1]}")
         else:
             print(
-                "Provide two DOCX paths, e.g. python scripts/run_regression_2docs.py doc1.docx doc2.docx"
+                "Provide two DOCX paths, e.g. "
+                "python scripts/run_regression_2docs.py doc1.docx doc2.docx",
+                file=sys.stderr,
             )
-            print(
-                "Or place CP Vietnam-FS2018-Consol-EN.docx and CJCGV-FS2018-EN- v2.docx in tests/test_data"
-            )
+            print(_default_doc_resolution_hint(), file=sys.stderr)
             return 1
 
     out = run_regression(

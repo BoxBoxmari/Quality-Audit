@@ -201,23 +201,24 @@ Examples:
         failed = sum(1 for r in results if not r.get("success", False))
         return 1 if failed > 0 else 0
 
-    except ValueError as e:
-        logging.getLogger("quality_audit").exception("Configuration error: %s", e)
-        print(f"Configuration Error: {e}")
+    except ValueError:
+        logger = logging.getLogger("quality_audit")
+        logger.debug("Configuration error during CLI execution", exc_info=True)
+        print("Configuration Error: Invalid arguments or configuration.")
         return 1
     except KeyboardInterrupt:
         logging.getLogger("quality_audit").exception("Processing cancelled by user")
         print("\nProcessing cancelled by user")
         return 130
-    except QualityAuditError as e:
-        logging.getLogger("quality_audit").exception("Quality Audit error: %s", e)
-        print(f"Quality Audit error: {e}")
+    except QualityAuditError:
+        logger = logging.getLogger("quality_audit")
+        logger.debug("Quality Audit domain error during processing", exc_info=True)
+        print("Quality Audit error: Processing failed. See logs for details.")
         return 1
-    except Exception as e:
-        logging.getLogger("quality_audit").exception(
-            "Unexpected error during processing: %s", e
-        )
-        print(f"\nERROR: Unexpected error during processing: {e}")
+    except Exception:
+        logger = logging.getLogger("quality_audit")
+        logger.debug("Unexpected CLI exception", exc_info=True)
+        print("\nERROR: Unexpected error during processing.")
         return 2
 
 

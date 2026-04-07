@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from quality_audit.core.cache_manager import cross_check_cache
+from quality_audit.core.cache_manager import AuditContext, cross_check_cache
 from quality_audit.utils.numeric_utils import compare_amounts
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,14 @@ class ReconciliationReport:
 class FinancialReconciliationService:
     """Reconcile note table totals against FS cache entries."""
 
+    def __init__(self, context: Optional[AuditContext] = None) -> None:
+        self.context = context
+
+    def _active_cross_check_cache(self):
+        if self.context is not None:
+            return self.context.cache
+        return cross_check_cache
+
     def reconcile(
         self,
         note_results: Dict[str, dict],
@@ -73,13 +81,14 @@ class FinancialReconciliationService:
         """
         report = ReconciliationReport()
 
+        cache = self._active_cross_check_cache()
         for heading, ctx in note_results.items():
             heading_lower = heading.lower().strip()
             note_cy = ctx.get("total_row_value_cy")
             note_py = ctx.get("total_row_value_py")
 
             # Look up FS cache entry
-            fs_entry = cross_check_cache.get(heading_lower)
+            fs_entry = cache.get(heading_lower)
             if fs_entry is None:
                 item = ReconciliationItem(
                     note_heading=heading,

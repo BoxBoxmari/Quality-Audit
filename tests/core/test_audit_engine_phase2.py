@@ -201,9 +201,7 @@ class TestTableClassifierV2:
             {"Item": "Revenue recognition policy", "Amount": 0},
         ]
         clf = TableClassifierV2()
-        result = clf.classify(
-            _make_table(rows), "Significant accounting policies"
-        )
+        result = clf.classify(_make_table(rows), "Significant accounting policies")
         assert result.table_type == TableType.GENERIC_NOTE
 
     def test_skipped_heading(self):

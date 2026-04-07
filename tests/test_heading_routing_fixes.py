@@ -86,3 +86,39 @@ def test_structure_override_cashflow():
     result = classifier.classify(df, heading=heading)
 
     assert result.table_type == TableType.FS_CASH_FLOW
+
+
+def test_legacy_heading_map_keeps_statement_family_without_content_guardrail():
+    """
+    Legacy parity lock:
+    statement heading must map directly to FS type even when content is narrative.
+    """
+    classifier = TableTypeClassifier()
+    df = pd.DataFrame(
+        {
+            "Desc": ["Narrative line", "Another narrative line"],
+            "Note": ["No numeric evidence", "No code evidence"],
+        }
+    )
+    result = classifier.classify(df, heading="Statement of Financial Position")
+    assert result.table_type == TableType.FS_BALANCE_SHEET
+    assert result.context is not None
+    assert result.context.get("classifier_reason") == "Legacy heading map match"
+
+
+def test_heading_statement_phrase_in_note_context_is_not_forced_to_fs():
+    classifier = TableTypeClassifier()
+    df = pd.DataFrame(
+        {
+            "Description": [
+                "Recognised in consolidated balance sheet",
+                "Deferred tax asset",
+            ],
+            "Amount": ["100", "90"],
+        }
+    )
+    result = classifier.classify(
+        df,
+        heading="Recognised in consolidated statement of income",
+    )
+    assert result.table_type in {TableType.GENERIC_NOTE, TableType.TAX_NOTE}

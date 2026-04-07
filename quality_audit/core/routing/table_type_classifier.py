@@ -1,6 +1,9 @@
 """
 Table Type Classifier for intelligent routing of financial tables.
 Distinguishes between main Financial Statements (BS, IS, CF, EQ) and Notes/Disclosures.
+
+NON-RUNTIME OWNER (canonical mode): kept for experimental/shadow flows only.
+Production correctness is owned by legacy/main.py single-path runtime.
 """
 
 import logging
@@ -11,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from quality_audit.config.feature_flags import FEATURE_FLAGS, get_feature_flags
+from quality_audit.config.feature_flags import get_feature_flags
 
 logger = logging.getLogger(__name__)
 
@@ -133,14 +136,6 @@ class TableTypeClassifier:
         heading_lower = heading.lower().strip() if heading else ""
         reasons = []
         flags = get_feature_flags()
-        use_heading_for_routing = True
-        if (
-            flags.get("classifier_content_override", False)
-            and heading_confidence is not None
-            and heading_confidence < 0.5
-        ):
-            use_heading_for_routing = False
-            reasons.append("Heading confidence < 0.5, prefer content")
         tax_requires_content = flags.get("tax_routing_content_evidence", False)
         has_exclusive_of_vat = self._has_exclusive_of_vat(heading_lower, table)
 
@@ -232,12 +227,9 @@ class TableTypeClassifier:
         # For relaxed BS: "assets in early part" = within first 20 rows of scan
         early_window = 20
         has_assets_in_early = False
+        has_cf_sections = False
 
-        # Feature flag: classifier_scan_expansion (default True) - expand scan window
-        if FEATURE_FLAGS.get("classifier_scan_expansion", True):
-            scan_rows = min(60, total_rows)
-        else:
-            scan_rows = min(20, total_rows)
+        scan_rows = min(60, total_rows)
 
         found_codes = set()
         for i in range(scan_rows):
@@ -251,6 +243,27 @@ class TableTypeClassifier:
                     if any(p in row_text for p in patterns):
                         has_keywords[k] = True
 
+                # Cash flow section signals.
+                #
+                # IMPORTANT: do NOT treat generic words like "operating" as a cash-flow indicator
+                # because income statements often contain "operating profit/expense".
+                # We only flag cash-flow when we see explicit "activities/ cash flows" section labels.
+                if any(
+                    p in row_text
+                    for p in (
+                        "cash flows from operating",
+                        "cash flows from investing",
+                        "cash flows from financing",
+                        "operating activities",
+                        "investing activities",
+                        "financing activities",
+                        "hoạt động kinh doanh",
+                        "hoạt động đầu tư",
+                        "hoạt động tài chính",
+                    )
+                ):
+                    has_cf_sections = True
+
                 if (
                     any(p in row_text for p in keyword_map["assets"])
                     and i < early_window
@@ -259,13 +272,17 @@ class TableTypeClassifier:
 
                 # Check for code patterns in first few columns
                 # Heuristic: row has numeric code in col 0, 1 or 2
-                for j in range(min(3, len(table.columns))):
-                    val = str(table.iloc[i, j]).strip()
+                for j in range(min(5, len(table.columns))):
+                    raw = str(table.iloc[i, j]).strip()
+                    # Normalize common extraction artifacts (e.g. "01.", "21)", "30 -")
+                    val = re.sub(r"[^0-9A-Za-z]", "", raw)
                     if re.match(r"^\d{2,3}[a-zA-Z]?$", val):
-                        found_codes.add(re.match(r"^(\d{2,3})", val).group(1))
+                        m_code = re.match(r"^(\d{2,3})", val)
+                        if m_code is not None:
+                            found_codes.add(m_code.group(1))
                         code_rows += 1
                         break
-                    elif re.match(r"^[IVX]+$", val):
+                    elif re.match(r"^[IVX]+$", raw):
                         code_rows += 1
                         break
             except Exception:
@@ -273,18 +290,7 @@ class TableTypeClassifier:
 
         code_density = code_rows / scan_rows if scan_rows > 0 else 0
 
-        # Comment 3: content score for override — allow content to override heading when score > 0.6
-        keyword_score = sum(1 for v in has_keywords.values() if v) / max(
-            len(has_keywords), 1
-        )
-        content_score = 0.5 * code_density + 0.5 * keyword_score
-        if flags.get("classifier_content_override", False) and content_score > 0.6:
-            use_heading_for_routing = False
-            reasons.append("Content score > 0.6, prefer content over heading")
         _ctx = {"scan_rows": scan_rows, "classifier_reason": ""}
-        if flags.get("classifier_content_override", False) and content_score > 0.6:
-            _ctx["content_override_reason"] = "content_score_above_threshold"
-            _ctx["content_score"] = round(content_score, 3)
         logger.debug(
             "Classifier scan: scan_rows=%s, has_assets=%s, has_liabilities=%s, has_assets_early=%s, code_density=%.2f",
             scan_rows,
@@ -294,220 +300,83 @@ class TableTypeClassifier:
             code_density,
         )
 
-        recognized_statement_keywords = [
-            "balance sheet",
-            "cân đối kế toán",
-            "statement of income",
-            "income statement",
-            "kết quả kinh doanh",
-            "profit and loss",
-            "p&l",
-            "cash flow",
-            "cash flows",
-            "lưu chuyển tiền tệ",
-            "lưu chuyển tiền",
-            "equity",
-            "vốn chủ sở hữu",
-            "statement of financial position",
-            "báo cáo tình hình tài chính",
-            "statement of comprehensive income",
-            "báo cáo kết quả hoạt động kinh doanh",
-            "statement of changes in equity",
-            "báo cáo biến động vốn chủ sở hữu",
-            "financial position",
-        ]
-        is_heading_recognized = any(
-            k in heading_lower for k in recognized_statement_keywords
-        )
-
-        effective_heading = "" if not use_heading_for_routing else heading_lower
-
-        # Structure-based override (Escape Hatch for GenericNote misclassification)
-        # ONLY apply if the heading is not explicitly recognized as a major statement
-        structure_override = None
-        if (
-            not is_heading_recognized
-            or not use_heading_for_routing
-            or "unknown" in heading_lower
+        effective_heading = heading_lower
+        if bool(flags.get("heading_fallback_from_table_first_row", False)) and (
+            not effective_heading or effective_heading.strip() in {"", "unknown", "n/a"}
         ):
-            bs_code_matches = len(
-                found_codes.intersection({"100", "110", "270", "300", "440"})
-            )
-            is_code_matches = len(
-                found_codes.intersection(
-                    {"01", "11", "20", "21", "22", "30", "50", "60"}
-                )
-            )
-            cf_code_matches = len(
-                found_codes.intersection({"20", "30", "40", "50", "60", "70"})
-            )
-
-            is_exclusive = len(
-                found_codes.intersection({"23", "25", "26", "51", "52", "61", "62"})
-            )
-            # Ticket 4: IS-exclusive extended codes (01, 02, 10)
-            is_exclusive_extended = len(found_codes.intersection({"01", "02", "10"}))
-            cfs_exclusive = len(
-                found_codes.intersection({"08", "09", "13", "14", "15", "16", "17"})
-            )
-
-            if bs_code_matches >= 3:
-                structure_override = TableType.FS_BALANCE_SHEET
-            elif cf_code_matches >= 3 and (has_keywords["cash"] or cfs_exclusive >= 1):
-                structure_override = TableType.FS_CASH_FLOW
-            elif is_code_matches >= 3 and (
-                is_exclusive >= 1
-                or is_exclusive_extended >= 1
-                or has_keywords["revenue"]
-                or has_keywords["profit"]
-            ):
-                structure_override = TableType.FS_INCOME_STATEMENT
-
-            if structure_override is not None:
-                _ctx["classifier_reason"] = "Structure-based override from column codes"
-                _ctx["classifier_primary_type"] = structure_override.value
-                _ctx["classifier_confidence"] = 0.90
-                return ClassificationResult(
-                    structure_override,
-                    0.90,
-                    ["Structure-based override from column codes"],
-                    context=_ctx,
-                )
+            # Heading fallback: infer a usable heading signal from the first few rows.
+            # This is intentionally conservative: it only activates when heading is missing/garbage.
+            try:
+                for i in range(min(15, len(table))):
+                    row_text = " ".join(
+                        [
+                            str(x).strip().lower()
+                            for x in table.iloc[i].tolist()
+                            if pd.notna(x) and str(x).strip()
+                        ]
+                    ).strip()
+                    if row_text:
+                        effective_heading = row_text
+                        _ctx["heading_fallback_used"] = True
+                        break
+            except Exception:
+                # Keep original heading_lower if fallback inference fails.
+                pass
 
         # 3. Routing Logic - P0-3: Match legacy routing với guardrails
         # Priority 1: Exact heading match (match legacy check_table_total logic)
         # Priority 2: Content-based fallback nếu heading unknown/null/garbage
         # Guardrails: Nếu heading match nhưng content không match → route GENERIC_NOTE
-        if (
-            not heading
-            or heading_lower == ""
-            or "unknown" in heading_lower
-            or not is_heading_recognized
-            or not use_heading_for_routing
-        ):
-            # Content-based statement detection
-            bs_by_early_and_density = has_assets_in_early and code_density > 0.2
-            bs_by_assets_and_liabilities = (
-                has_keywords["assets"] and has_keywords["liabilities"]
-            )
-            if bs_by_early_and_density or bs_by_assets_and_liabilities:
-                _ctx["classifier_reason"] = "Content-based: ASSETS/LIABILITIES detected"
-                _ctx["classifier_primary_type"] = TableType.FS_BALANCE_SHEET.value
-                _ctx["classifier_confidence"] = 0.85
-                return ClassificationResult(
-                    TableType.FS_BALANCE_SHEET,
-                    0.85,
-                    ["Content-based: ASSETS/LIABILITIES detected"],
-                    context=_ctx,
-                )
-
-            if (
-                has_keywords["revenue"] and has_keywords["profit"]
-            ) and code_density > 0.3:
-                _ctx["classifier_reason"] = "Content-based: REVENUE/PROFIT detected"
-                _ctx["classifier_primary_type"] = TableType.FS_INCOME_STATEMENT.value
-                _ctx["classifier_confidence"] = 0.85
-                return ClassificationResult(
-                    TableType.FS_INCOME_STATEMENT,
-                    0.85,
-                    ["Content-based: REVENUE/PROFIT detected"],
-                    context=_ctx,
-                )
-
-            if has_keywords["cash"] and has_keywords["flows"] and code_density > 0.3:
-                _ctx["classifier_reason"] = "Content-based: CASH FLOWS detected"
-                _ctx["classifier_primary_type"] = TableType.FS_CASH_FLOW.value
-                _ctx["classifier_confidence"] = 0.85
-                return ClassificationResult(
-                    TableType.FS_CASH_FLOW,
-                    0.85,
-                    ["Content-based: CASH FLOWS detected"],
-                    context=_ctx,
-                )
-
         # Balance Sheet - Exact heading match với guardrails (use effective_heading)
         if (
             effective_heading == "balance sheet"
+            or "statement of financial position" in effective_heading
             or "cân đối kế toán" in effective_heading
         ):
-            # Verify with content (guardrails)
-            if (
-                has_keywords["assets"]
-                or has_keywords["liabilities"]
-                or code_density > 0.2
-            ):
-                _ctx["classifier_reason"] = "Exact heading + content match"
-                _ctx["classifier_primary_type"] = TableType.FS_BALANCE_SHEET.value
-                _ctx["classifier_confidence"] = 0.95
-                return ClassificationResult(
-                    TableType.FS_BALANCE_SHEET,
-                    0.95,
-                    ["Exact heading + content match"],
-                    context=_ctx,
-                )
-            else:
-                # Heading match nhưng content không match → route GENERIC_NOTE (guardrails)
-                _ctx["classifier_reason"] = "Heading match but content suggests note"
-                _ctx["classifier_primary_type"] = TableType.GENERIC_NOTE.value
-                _ctx["classifier_confidence"] = 0.7
-                return ClassificationResult(
-                    TableType.GENERIC_NOTE,
-                    0.7,
-                    ["Heading match but content suggests note"],
-                    context=_ctx,
-                )
+            _ctx["classifier_reason"] = (
+                "Exact heading match"
+                if effective_heading == "balance sheet"
+                else "Legacy heading map match"
+            )
+            _ctx["classifier_primary_type"] = TableType.FS_BALANCE_SHEET.value
+            _ctx["classifier_confidence"] = 0.95
+            return ClassificationResult(
+                TableType.FS_BALANCE_SHEET,
+                0.95,
+                [str(_ctx["classifier_reason"])],
+                context=_ctx,
+            )
 
         # Income Statement - Exact heading match với guardrails
         if (
-            effective_heading == "statement of income"
+            "statement of income" in effective_heading
+            or "income statement" in effective_heading
             or "kết quả kinh doanh" in effective_heading
         ):
-            if has_keywords["revenue"] or has_keywords["profit"] or code_density > 0.2:
-                _ctx["classifier_reason"] = "Exact heading + content match"
-                _ctx["classifier_primary_type"] = TableType.FS_INCOME_STATEMENT.value
-                _ctx["classifier_confidence"] = 0.95
-                return ClassificationResult(
-                    TableType.FS_INCOME_STATEMENT,
-                    0.95,
-                    ["Exact heading + content match"],
-                    context=_ctx,
-                )
-            else:
-                _ctx["classifier_reason"] = "Heading match but content suggests note"
-                _ctx["classifier_primary_type"] = TableType.GENERIC_NOTE.value
-                _ctx["classifier_confidence"] = 0.7
-                return ClassificationResult(
-                    TableType.GENERIC_NOTE,
-                    0.7,
-                    ["Heading match but content suggests note"],
-                    context=_ctx,
-                )
+            _ctx["classifier_reason"] = "Exact heading match"
+            _ctx["classifier_primary_type"] = TableType.FS_INCOME_STATEMENT.value
+            _ctx["classifier_confidence"] = 0.95
+            return ClassificationResult(
+                TableType.FS_INCOME_STATEMENT,
+                0.95,
+                ["Exact heading match"],
+                context=_ctx,
+            )
 
         # Cash Flow - Exact heading match với guardrails
         if (
-            effective_heading == "statement of cash flows"
+            "statement of cash flows" in effective_heading
             or "lưu chuyển tiền" in effective_heading
         ):
-            if has_keywords["cash"] or has_keywords["flows"] or code_density > 0.2:
-                _ctx["classifier_reason"] = "Exact heading + content match"
-                _ctx["classifier_primary_type"] = TableType.FS_CASH_FLOW.value
-                _ctx["classifier_confidence"] = 0.95
-                return ClassificationResult(
-                    TableType.FS_CASH_FLOW,
-                    0.95,
-                    ["Exact heading + content match"],
-                    context=_ctx,
-                )
-            else:
-                _ctx["classifier_reason"] = "Heading match but content suggests note"
-                _ctx["classifier_primary_type"] = TableType.GENERIC_NOTE.value
-                _ctx["classifier_confidence"] = 0.7
-                return ClassificationResult(
-                    TableType.GENERIC_NOTE,
-                    0.7,
-                    ["Heading match but content suggests note"],
-                    context=_ctx,
-                )
+            _ctx["classifier_reason"] = "Exact heading match"
+            _ctx["classifier_primary_type"] = TableType.FS_CASH_FLOW.value
+            _ctx["classifier_confidence"] = 0.95
+            return ClassificationResult(
+                TableType.FS_CASH_FLOW,
+                0.95,
+                ["Exact heading match"],
+                context=_ctx,
+            )
 
         # Equity
         if (
@@ -547,6 +416,126 @@ class TableTypeClassifier:
             _ctx["classifier_confidence"] = 0.8
             return ClassificationResult(
                 TableType.TAX_NOTE, 0.8, ["Tax keyword match"], context=_ctx
+            )
+
+        # Content-based routing (heading unknown or non-exact).
+        # Balance sheet evidence: code density + assets early + liabilities anywhere in scan.
+        bs_code_density_threshold = float(
+            flags.get("routing_balance_sheet_code_density_threshold", 0.2)
+        )
+        if (
+            not has_cf_sections
+            and has_assets_in_early
+            and has_keywords["liabilities"]
+            and code_density >= bs_code_density_threshold
+        ):
+            _ctx["classifier_reason"] = "Structure-based override (assets+liabilities+code density)"
+            _ctx["classifier_primary_type"] = TableType.FS_BALANCE_SHEET.value
+            _ctx["classifier_confidence"] = 0.8
+            return ClassificationResult(
+                TableType.FS_BALANCE_SHEET,
+                0.8,
+                ["Structure-based override (assets+liabilities+code density)"],
+                context=_ctx,
+            )
+
+        # Balance sheet structure override: classic BS code families even if labels are abbreviated.
+        bs_codes = {"100", "110", "270", "300", "440"}
+        if (
+            not has_cf_sections
+            and code_density >= bs_code_density_threshold
+            and len(found_codes.intersection(bs_codes)) >= 2
+        ):
+            _ctx["classifier_reason"] = "Structure-based override (BS codes)"
+            _ctx["classifier_primary_type"] = TableType.FS_BALANCE_SHEET.value
+            _ctx["classifier_confidence"] = 0.75
+            return ClassificationResult(
+                TableType.FS_BALANCE_SHEET,
+                0.75,
+                ["Structure-based override (BS codes)"],
+                context=_ctx,
+            )
+
+        # Income statement evidence: P&L code families and revenue/profit signals.
+        is_code_density_threshold = float(
+            flags.get("routing_income_statement_code_density_threshold", 0.15)
+        )
+        pl_codes = {"01", "11", "20", "21", "22", "30", "50", "60"}
+        if (
+            not has_cf_sections
+            and code_density >= is_code_density_threshold
+            and (
+                has_keywords["revenue"]
+                or has_keywords["profit"]
+                or len(found_codes.intersection(pl_codes)) >= 4
+            )
+            and len(found_codes.intersection(pl_codes)) >= 2
+        ):
+            _ctx["classifier_reason"] = "Structure-based override (P&L codes)"
+            _ctx["classifier_primary_type"] = TableType.FS_INCOME_STATEMENT.value
+            _ctx["classifier_confidence"] = 0.8
+            return ClassificationResult(
+                TableType.FS_INCOME_STATEMENT,
+                0.8,
+                ["Structure-based override (P&L codes)"],
+                context=_ctx,
+            )
+
+        # Income statement fallback (no-code/low-code tables):
+        # Some DOCX extractions drop the code column for IS fragments; allow keyword-only routing
+        # when balance-sheet signals are absent.
+        if (
+            not has_cf_sections
+            and (has_keywords["revenue"] or has_keywords["profit"])
+            and not has_keywords["assets"]
+            and not has_keywords["liabilities"]
+        ):
+            _ctx["classifier_reason"] = "Content evidence (revenue/profit)"
+            _ctx["classifier_primary_type"] = TableType.FS_INCOME_STATEMENT.value
+            _ctx["classifier_confidence"] = 0.7
+            return ClassificationResult(
+                TableType.FS_INCOME_STATEMENT,
+                0.7,
+                ["Content evidence (revenue/profit)"],
+                context=_ctx,
+            )
+
+        # Cash flow evidence: cash/flows keywords + typical CF code families.
+        cf_code_density_threshold = float(
+            flags.get("routing_cash_flow_code_density_threshold", 0.12)
+        )
+        cf_codes = {"20", "30", "40", "50", "60", "70"}
+        if (
+            code_density >= cf_code_density_threshold
+            and (has_keywords["cash"] or has_keywords["flows"])
+            and len(found_codes.intersection(cf_codes)) >= 2
+        ):
+            _ctx["classifier_reason"] = "Content evidence (cash flow codes)"
+            _ctx["classifier_primary_type"] = TableType.FS_CASH_FLOW.value
+            _ctx["classifier_confidence"] = 0.75
+            return ClassificationResult(
+                TableType.FS_CASH_FLOW,
+                0.75,
+                ["Content evidence (cash flow codes)"],
+                context=_ctx,
+            )
+
+        # Cash flow structure override (language-agnostic):
+        # If table contains explicit CF section labels (operating/investing/financing),
+        # allow routing even when code families differ from the legacy set.
+        if (
+            has_cf_sections
+            and code_density >= float(flags.get("routing_cash_flow_code_density_threshold", 0.12))
+            and len(found_codes) >= 5
+        ):
+            _ctx["classifier_reason"] = "Structure-based override (cash flow sections)"
+            _ctx["classifier_primary_type"] = TableType.FS_CASH_FLOW.value
+            _ctx["classifier_confidence"] = 0.7
+            return ClassificationResult(
+                TableType.FS_CASH_FLOW,
+                0.7,
+                ["Structure-based override (cash flow sections)"],
+                context=_ctx,
             )
 
         # Default to Generic Note if no specific match

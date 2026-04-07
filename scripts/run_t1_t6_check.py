@@ -2,6 +2,7 @@
 Run T1–T6 checks on baseline XLSX in reports/.
 Usage: python scripts/run_t1_t6_check.py
 """
+
 from __future__ import annotations
 
 import re
@@ -31,7 +32,9 @@ def run_t1(inventory: list[dict], label: str) -> tuple[bool, int]:
     ]
     n = len(bad)
     ok = n == 0
-    print(f"[T1] {label}: numeric note PASS with assertions_count=0 count = {n} -> {'PASS' if ok else 'FAIL'}")
+    print(
+        f"[T1] {label}: numeric note PASS with assertions_count=0 count = {n} -> {'PASS' if ok else 'FAIL'}"
+    )
     return ok, n
 
 
@@ -47,7 +50,9 @@ def run_t2(inventory: list[dict], label: str) -> tuple[bool, int]:
     # If we don't have rule_id in inventory, count all numeric PASS as potential NOTE_SUM_TO_TOTAL
     n = len(note_pass)
     ok = n >= 10
-    print(f"[T2] {label}: numeric note PASS count = {n} (need >= 10) -> {'PASS' if ok else 'FAIL'}")
+    print(
+        f"[T2] {label}: numeric note PASS count = {n} (need >= 10) -> {'PASS' if ok else 'FAIL'}"
+    )
     return ok, n
 
 
@@ -70,7 +75,9 @@ def run_t3(inventory: list[dict], label: str) -> tuple[bool, int]:
     ]
     n = len(note4_cash_pass)
     ok = n >= 1
-    print(f"[T3] {label}: Note 4 Cash PASS count = {n} (need >= 1) -> {'PASS' if ok else 'FAIL'}")
+    print(
+        f"[T3] {label}: Note 4 Cash PASS count = {n} (need >= 1) -> {'PASS' if ok else 'FAIL'}"
+    )
     return ok, n
 
 
@@ -84,19 +91,29 @@ def _related_parties_match(r: dict) -> bool:
 def run_t4(inventory: list[dict], label: str) -> tuple[bool, int]:
     """T4: No related-parties table with status FAIL (subset mode)."""
     fail_related = [
-        r for r in inventory
+        r
+        for r in inventory
         if _related_parties_match(r) and (r.get("status_enum") or "").strip() == "FAIL"
     ]
     n = len(fail_related)
     ok = n == 0
-    print(f"[T4] {label}: related parties FAIL count = {n} (need 0) -> {'PASS' if ok else 'FAIL'}")
+    print(
+        f"[T4] {label}: related parties FAIL count = {n} (need 0) -> {'PASS' if ok else 'FAIL'}"
+    )
     return ok, n
 
 
 def run_t5() -> tuple[bool, str]:
     """T5: Run pytest tests/core/test_cash_flow_rules.py; pass if exit code 0."""
     out = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/core/test_cash_flow_rules.py", "-v", "--tb=short"],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests/core/test_cash_flow_rules.py",
+            "-v",
+            "--tb=short",
+        ],
         cwd=REPO,
         capture_output=True,
         text=True,
@@ -104,7 +121,9 @@ def run_t5() -> tuple[bool, str]:
     )
     log = (out.stdout or "") + (out.stderr or "")
     ok = out.returncode == 0
-    print(f"[T5] pytest test_cash_flow_rules exit code = {out.returncode} -> {'PASS' if ok else 'FAIL'}")
+    print(
+        f"[T5] pytest test_cash_flow_rules exit code = {out.returncode} -> {'PASS' if ok else 'FAIL'}"
+    )
     return ok, log
 
 
@@ -124,15 +143,20 @@ def run_t6(inventory: list[dict], label: str) -> tuple[bool, dict]:
             continue
         by_type[tt] += 1
     ok = all(by_type[t] >= 1 for t in FS_TYPES)
-    print(f"[T6] {label}: BS={by_type['FS_BALANCE_SHEET']} IS={by_type['FS_INCOME_STATEMENT']} CF={by_type['FS_CASH_FLOW']} (each >= 1) -> {'PASS' if ok else 'FAIL'}")
+    print(
+        f"[T6] {label}: BS={by_type['FS_BALANCE_SHEET']} IS={by_type['FS_INCOME_STATEMENT']} CF={by_type['FS_CASH_FLOW']} (each >= 1) -> {'PASS' if ok else 'FAIL'}"
+    )
     if not ok:
         for r in fs_rows:
-            print(f"  FS row: type={r.get('table_type')} status={r.get('status_enum')} assertions_count={r.get('assertions_count')} heading={str(r.get('heading') or '')[:50]}")
+            print(
+                f"  FS row: type={r.get('table_type')} status={r.get('status_enum')} assertions_count={r.get('assertions_count')} heading={str(r.get('heading') or '')[:50]}"
+            )
     return ok, by_type
 
 
 def main() -> int:
     from io import StringIO
+
     inv1 = load_one_xlsx(BASELINE_1)
     inv2 = load_one_xlsx(BASELINE_2)
     buf = StringIO()
@@ -142,7 +166,9 @@ def main() -> int:
     try:
         print(f"Loaded CP: {len(inv1)} tables, CJCGV: {len(inv2)} tables")
         if not inv1 and not inv2:
-            print("No data; check XLSX paths and sheet names (Tổng hợp kiểm tra, Run metadata).")
+            print(
+                "No data; check XLSX paths and sheet names (Tổng hợp kiểm tra, Run metadata)."
+            )
             exit_code = 1
         else:
             t1_1, _ = run_t1(inv1, "CP Vietnam")

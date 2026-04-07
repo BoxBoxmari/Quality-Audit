@@ -12,9 +12,9 @@ class TestWarnMapping:
             status_enum="WARN",
         )
         d = vr.to_dict()
-        assert d["status_category"] == "WARN", (
-            f"Expected WARN category, got {d['status_category']}"
-        )
+        assert (
+            d["status_category"] == "WARN"
+        ), f"Expected WARN category, got {d['status_category']}"
 
     def test_fail_status_maps_to_fail_data_category(self):
         vr = ValidationResult(

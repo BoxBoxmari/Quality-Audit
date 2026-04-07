@@ -120,6 +120,11 @@ class TableNormalizer:
         r"^[IVXLCDM]+(\.[\d]+)?$",  # Roman numerals like "IX", "V.1"
     ]
 
+    _CODE_VALUE_PATTERN = re.compile(
+        r"^(\d{1,4}[a-zA-Z]?$|[a-zA-Z]{1,3}\d{1,4}[a-zA-Z]?$|[ivxlcdm]+)$",
+        re.IGNORECASE,
+    )
+
     @staticmethod
     def normalize_table(
         df: pd.DataFrame, heading: str | None = None
@@ -199,7 +204,12 @@ class TableNormalizer:
 
         # Step 3: Detect Code column with synonyms and patterns
         code_col = TableNormalizer._detect_code_column_with_synonyms(normalized_df)
+        effective_code_col, code_column_evidence = (
+            TableNormalizer._detect_effective_code_column(normalized_df, code_col)
+        )
         metadata["detected_code_column"] = code_col
+        metadata["effective_code_column"] = effective_code_col
+        metadata["code_column_evidence"] = code_column_evidence
 
         # Step 4: Detect current and prior year columns
         cur_col, prior_col = ColumnDetector.detect_financial_columns_advanced(
@@ -247,6 +257,100 @@ class TableNormalizer:
         metadata["detected_prior_col"] = prior_col
 
         return normalized_df, metadata
+
+    @staticmethod
+    def _code_match_ratio(series: pd.Series) -> float:
+        non_empty = series.astype(str).str.strip()
+        non_empty = non_empty[(non_empty != "") & (non_empty.str.lower() != "nan")]
+        if non_empty.empty:
+            return 0.0
+        match_count = non_empty.map(
+            lambda v: bool(TableNormalizer._CODE_VALUE_PATTERN.match(str(v).strip()))
+        ).sum()
+        return float(match_count) / float(len(non_empty))
+
+    @staticmethod
+    def _description_column_index(df: pd.DataFrame) -> int:
+        text_headers = (
+            "description",
+            "particulars",
+            "item",
+            "account",
+            "nội dung",
+            "chỉ tiêu",
+        )
+        for idx, col in enumerate(df.columns):
+            c = str(col).strip().lower()
+            if any(k in c for k in text_headers):
+                return idx
+        return 1 if len(df.columns) > 1 else 0
+
+    @staticmethod
+    def _detect_effective_code_column(
+        df: pd.DataFrame, declared_code_column: Optional[str]
+    ) -> Tuple[Optional[str], Dict[str, Any]]:
+        """
+        Choose effective code column deterministically:
+        1) highest code-match ratio
+        2) closest to description column
+        3) stable column order fallback
+        """
+        if df is None or df.empty:
+            return declared_code_column, {
+                "candidates": [],
+                "chosen": declared_code_column,
+            }
+
+        candidates = []
+        for idx, col in enumerate(df.columns):
+            ratio = TableNormalizer._code_match_ratio(df[col])
+            header_norm = TableNormalizer.normalize_header(str(col))
+            header_like = bool(
+                TableNormalizer._CODE_HEADER_PATTERN.match(header_norm)
+                or header_norm
+                in {
+                    TableNormalizer.normalize_header(s)
+                    for s in TableNormalizer.PRIORITY_CODE_SYNONYMS
+                }
+            )
+            if header_like or ratio >= 0.45:
+                candidates.append((col, idx, ratio, header_like))
+
+        if not candidates:
+            return declared_code_column, {
+                "candidates": [],
+                "chosen": declared_code_column,
+                "reason": "no_code_like_candidate",
+            }
+
+        desc_idx = TableNormalizer._description_column_index(df)
+        # Deterministic sort by ratio(desc), header_like(desc), proximity(asc), index(asc)
+        candidates_sorted = sorted(
+            candidates,
+            key=lambda x: (-x[2], -int(x[3]), abs(x[1] - desc_idx), x[1]),
+        )
+        best_col = str(candidates_sorted[0][0]).strip()
+
+        # Keep declared code column when it is effectively equivalent to best candidate.
+        if declared_code_column:
+            declared_ratio = TableNormalizer._code_match_ratio(df[declared_code_column])
+            best_ratio = candidates_sorted[0][2]
+            if declared_ratio >= (best_ratio - 0.03):
+                best_col = declared_code_column
+
+        return best_col, {
+            "description_col_idx": desc_idx,
+            "candidates": [
+                {
+                    "column": str(col),
+                    "idx": idx,
+                    "code_match_ratio": round(ratio, 4),
+                    "header_like": bool(header_like),
+                }
+                for col, idx, ratio, header_like in candidates_sorted
+            ],
+            "chosen": best_col,
+        }
 
     @staticmethod
     def _extract_period_key(col_name: str) -> Optional[str]:
@@ -547,9 +651,36 @@ class TableNormalizer:
         if len(df.columns) == 0:
             return []
         roles, _, _ = infer_column_roles(df, header_row=0, context=None)
-        return [
+        code_like = [
             str(c).strip() for c in df.columns if roles.get(str(c).strip()) == ROLE_CODE
         ]
+        explicit_code_headers = [
+            c
+            for c in code_like
+            if TableNormalizer._CODE_HEADER_PATTERN.match(
+                TableNormalizer.normalize_header(c)
+            )
+        ]
+        # Compatibility contract:
+        # - never treat Description as code-like when explicit code headers are already 3+ (e.g. Code, Code.1, Code.2)
+        if len(explicit_code_headers) >= 3:
+            code_like = [
+                c
+                for c in code_like
+                if "description" not in TableNormalizer.normalize_header(c)
+            ]
+        # Compatibility contract:
+        # - include Description as code-like only in multi-code header variants
+        #   with 1..2 explicit code headers (e.g. Code + Code.1),
+        # - do not include it when no explicit code header exists,
+        # - do not include it when there are already 3+ explicit code headers.
+        if 1 <= len(explicit_code_headers) <= 2:
+            for col in df.columns:
+                col_name = str(col).strip()
+                col_norm = TableNormalizer.normalize_header(col_name)
+                if "description" in col_norm and col_name not in code_like:
+                    code_like.append(col_name)
+        return code_like
 
     @staticmethod
     def _detect_code_column_with_synonyms(df: pd.DataFrame) -> str | None:

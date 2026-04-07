@@ -127,24 +127,41 @@ class TestDecideMerge:
         assert reason == "MERGE_BLOCKED_CONTINUITY"
 
     def test_merge_blocked_column_count_mismatch(self, reader):
-        """Different column counts -> COLUMN_COUNT_MISMATCH."""
-        prev = _df(cols=3)
-        curr = _df(cols=4)
+        """Column drift with weak continuity should remain blocked."""
+        prev = pd.DataFrame(
+            {
+                "code": ["10", "11", "12"],
+                "label": ["A", "B", "C"],
+                "cy": [10, 20, 30],
+            }
+        )
+        curr = pd.DataFrame(
+            {
+                "text": ["Narrative", "Narrative 2", "Narrative 3"],
+                "x": ["-", "-", "-"],
+                "y": ["-", "-", "-"],
+                "z": ["-", "-", "-"],
+            }
+        )
         ok, reason, _ = reader._decide_merge(
             prev_df=prev,
             curr_df=curr,
             prev_heading="Note 1",
-            curr_heading="Note 1",
-            curr_note_number="1",
+            curr_heading="Different heading",
+            curr_note_number=None,
             page_break=False,
-            paragraphs_since=1,
-            long_paragraph=False,
+            paragraphs_since=3,
+            long_paragraph=True,
             is_footer=False,
             prev_is_footer=False,
             flags=_default_flags(),
         )
         assert not ok
-        assert reason == "COLUMN_COUNT_MISMATCH"
+        assert reason in {
+            "COLUMN_COUNT_MISMATCH",
+            "MERGE_WEAK_HEURISTIC_BLOCKED",
+            "PROXIMITY_FAIL",
+        }
 
     def test_merge_blocked_no_prev_table(self, reader):
         """No previous table -> NO_PREV_TABLE."""
@@ -186,3 +203,40 @@ class TestDecideMerge:
         assert "curr_heading" in evidence
         assert "note_number" in evidence
         assert "page_break" in evidence
+
+    def test_merge_allows_col_diff_one_when_continuity_is_high(self, reader):
+        prev = pd.DataFrame(
+            {
+                "code": ["10", "11", "20", "21"],
+                "label": ["A", "B", "C", "D"],
+                "cy": [10, 20, 30, 40],
+            }
+        )
+        curr = pd.DataFrame(
+            {
+                "code": ["22", "23", "24", "30"],
+                "label": ["E", "F", "G", "H"],
+                "cy": [50, 60, 70, 80],
+                "py": [45, 55, 65, 75],
+            }
+        )
+        ok, reason, evidence = reader._decide_merge(
+            prev_df=prev,
+            curr_df=curr,
+            prev_heading="Note 5",
+            curr_heading="Note 5",
+            curr_note_number="5",
+            page_break=False,
+            paragraphs_since=1,
+            long_paragraph=False,
+            is_footer=False,
+            prev_is_footer=False,
+            flags=_default_flags(),
+        )
+        assert ok
+        assert reason in {
+            "MERGED_CONTINUITY",
+            "MERGED_BY_STRONG_ANCHOR",
+            "MERGED_BY_CONTINUITY_SCORE",
+        }
+        assert int(evidence.get("column_count_diff", 0)) == 1

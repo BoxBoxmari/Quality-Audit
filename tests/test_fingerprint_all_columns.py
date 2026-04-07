@@ -51,6 +51,6 @@ class TestFingerprintAllColumns:
         df = pd.DataFrame(rows, columns=["Description", "2024", "2023"])
         fp = fingerprinter.extract(df)
         # 1000000 doesn't match _CODE_RE (^\\d{2,3}[a-zA-Z]?$)
-        assert len(fp.found_codes) == 0, (
-            f"Expected no codes from amounts, got {fp.found_codes}"
-        )
+        assert (
+            len(fp.found_codes) == 0
+        ), f"Expected no codes from amounts, got {fp.found_codes}"

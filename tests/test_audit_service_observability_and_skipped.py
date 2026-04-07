@@ -2,6 +2,7 @@ import pandas as pd
 from openpyxl import load_workbook
 
 from quality_audit.core.cache_manager import AuditContext, LRUCacheManager
+from quality_audit.core.validators.base_validator import ValidationResult
 from quality_audit.services.audit_service import AuditService
 
 
@@ -93,16 +94,16 @@ class TestAuditServiceObservabilityAndSkippedTables:
         assert telemetry_ws["B14"].value == 1
         wb.close()
 
-    def test_skipped_no_numeric_evidence_retained_in_output(
+    def test_balance_sheet_not_skipped_by_numeric_gating_in_parity_mode(
         self, tmp_path, monkeypatch
     ):
         """
-        BalanceSheet tables skipped due to insufficient numeric evidence (skip_no_numeric policy)
-        are labeled as SKIPPED_NO_NUMERIC_EVIDENCE and retained in output (not filtered like footer artifacts).
+        In legacy parity mode, BalanceSheet tables must not be skipped by numeric-evidence gating.
         """
 
         def _get_factory_flags():
             return {
+                "legacy_parity_mode": True,
                 "routing_balance_sheet_gating_enabled": True,
                 "routing_balance_sheet_gating_policy": "skip_no_numeric",
                 "routing_balance_sheet_numeric_threshold": 0.25,
@@ -148,20 +149,83 @@ class TestAuditServiceObservabilityAndSkippedTables:
         results = service._validate_tables(table_heading_pairs)
         assert len(results) == 2
 
-        # Verify the skipped table has correct rule_id
-        skipped_result = results[1]
-        assert skipped_result["rule_id"] == "SKIPPED_NO_NUMERIC_EVIDENCE"
-        assert skipped_result["status_enum"] == "INFO"
-        assert "numeric evidence" in skipped_result["context"].get("reason", "").lower()
+        # In parity mode, this table must not be skipped via routing gate.
+        bs_result = results[1]
+        assert bs_result["rule_id"] != "SKIPPED_NO_NUMERIC_EVIDENCE"
 
-        # Generate report and verify skipped table is NOT filtered from output
+        # Generate report and verify table is still included in output.
         excel_path = tmp_path / "out.xlsx"
         service._generate_report(table_heading_pairs, results, str(excel_path))
 
-        # Verify both tables are in output (SKIPPED_NO_NUMERIC_EVIDENCE is retained)
         wb = load_workbook(str(excel_path), read_only=False, data_only=True)
-        # Check that we have sheets for both tables (not just one)
-        # The exact sheet names depend on implementation, but we should have more than just Telemetry
         sheet_names = wb.sheetnames
-        assert len(sheet_names) >= 2  # At least Telemetry + one data sheet
+        assert len(sheet_names) >= 2
         wb.close()
+
+    def test_ticket5_escape_hatch_disabled_in_parity_mode(self, monkeypatch):
+        """Ticket-5 escape hatch must not force GenericTableValidator in parity mode."""
+
+        monkeypatch.setattr(
+            "quality_audit.services.audit_service.get_feature_flags",
+            lambda: {"legacy_parity_mode": True},
+        )
+
+        service = self._make_service()
+        service.context.set_last_classification_context(
+            {
+                "classifier_primary_type": "FS_BALANCE_SHEET",
+                "classifier_confidence": 0.95,
+            }
+        )
+
+        monkeypatch.setattr(
+            "quality_audit.services.audit_service.ValidatorFactory.get_validator",
+            lambda *_args, **_kwargs: (None, "SKIPPED_NO_NUMERIC_EVIDENCE"),
+        )
+
+        df = pd.DataFrame(
+            {"Description": ["Assets", "Liabilities"], "Notes": ["n/a", "n/a"]}
+        )
+        result = service._validate_single_table(
+            df,
+            heading="Balance Sheet",
+            table_context={"heading_source": "paragraph"},
+        )
+
+        assert result.rule_id == "NO_NUMERIC_EVIDENCE"
+
+    def test_validate_single_table_injects_heading_attr_and_cleans_up(
+        self, monkeypatch
+    ):
+        """Inject heading into df.attrs for validator and restore attrs after validation."""
+
+        class _DummyValidator:
+            def validate(self, table, _heading, table_context=None):
+                captured = table.attrs.get("heading")
+                return ValidationResult(
+                    status="PASS",
+                    status_enum="PASS",
+                    context={"captured_heading_attr": captured},
+                )
+
+        monkeypatch.setattr(
+            "quality_audit.services.audit_service.ValidatorFactory.get_validator",
+            lambda *_args, **_kwargs: (_DummyValidator(), None),
+        )
+        monkeypatch.setattr(
+            "quality_audit.services.audit_service.get_feature_flags",
+            lambda: {"baseline_authoritative_default": False},
+        )
+
+        service = self._make_service()
+        df = pd.DataFrame({"Code": ["10"], "CY": [100.0], "PY": [90.0]})
+        assert "heading" not in df.attrs
+
+        result = service._validate_single_table(
+            df,
+            heading="Injected Heading",
+            table_context={"heading_source": "test"},
+        )
+
+        assert result.context.get("captured_heading_attr") == "Injected Heading"
+        assert "heading" not in df.attrs

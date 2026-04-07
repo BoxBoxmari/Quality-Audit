@@ -8,11 +8,14 @@ a reference value from another statement, within tolerance.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
 from quality_audit.core.evidence import Severity, ValidationEvidence
+from quality_audit.core.legacy_audit.cross_check import (
+    resolve_cross_check_key_with_precedence,
+)
 from quality_audit.core.rules.base_rule import AuditRule
 
 if TYPE_CHECKING:
@@ -20,6 +23,26 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_legacy_cross_check_key(
+    cache: Any,
+    explicit_business_key: str | None,
+    combined_key: str | None,
+    subtype_keys: list[str],
+    code_fallback: str | None = None,
+) -> str:
+    """
+    Baseline-first key resolution wrapper.
+    Kept in rules module as adapter for existing callers.
+    """
+    return resolve_cross_check_key_with_precedence(
+        cache=cache,
+        explicit_business_key=explicit_business_key,
+        combined_key=combined_key,
+        specific_keys=subtype_keys,
+        code_fallback=code_fallback,
+    )
 
 
 class CrossCheckRule(AuditRule):

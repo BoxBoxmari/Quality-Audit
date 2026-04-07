@@ -5,17 +5,16 @@ from quality_audit.utils.table_normalizer import TableNormalizer
 
 class TestCodeColumnDetection:
     def test_multi_code_columns_detects_code_dot_variants(self):
-        """Detector returns ALL code-like columns: Description, Code, Code.1, Code.2."""
+        """Detector returns code-like columns and excludes plain description headers."""
         df = pd.DataFrame(
             columns=["Description", "Code", "Code.1", "Code.2", "2018", "2017"]
         )
         code_cols = TableNormalizer._detect_code_columns_with_synonyms(df)
         assert code_cols == [
-            "Description",
             "Code",
             "Code.1",
             "Code.2",
-        ], f"Expected ['Description','Code','Code.1','Code.2'], got {code_cols}"
+        ], f"Expected ['Code','Code.1','Code.2'], got {code_cols}"
 
     def test_detects_common_vietnamese_synonyms(self):
         """Test detection of common Vietnamese code aliases."""
@@ -71,3 +70,16 @@ class TestCodeColumnDetection:
         # Should pick "Mã số" because it's higher in priority list
         code_col = TableNormalizer._detect_code_column_with_synonyms(df)
         assert code_col == "Mã số"
+
+    def test_effective_code_column_prefers_value_dominance(self):
+        df = pd.DataFrame(
+            {
+                "Unknown": ["01", "04", "25", "421b", "70"],
+                "Amount": [1000, 2000, 3000, 4000, 5000],
+                "2024": [10, 20, 30, 40, 50],
+                "2023": [9, 19, 29, 39, 49],
+            }
+        )
+        _, metadata = TableNormalizer.normalize_table(df)
+        assert metadata.get("effective_code_column") == "Unknown"
+        assert metadata.get("detected_code_column") == "Unknown"

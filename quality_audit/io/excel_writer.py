@@ -81,6 +81,32 @@ class ExcelWriter:
         """
         return Workbook()
 
+    @staticmethod
+    def _legacy_status_to_enum(status_value: object) -> str:
+        """Map legacy status text/icon values to status enum."""
+        raw = str(status_value or "").strip()
+        upper = raw.upper()
+        compact = upper.replace(" ", "")
+
+        if not raw:
+            return "UNKNOWN"
+        if "⚠" in raw or "WARNING" in upper or "WARN" in upper:
+            return "WARN"
+        if "ERROR" in upper:
+            return "ERROR"
+        if "PASS" in upper:
+            return "PASS"
+        if (
+            "FAIL" in upper
+            or "❌" in raw
+            or compact.startswith("X:")
+            or compact.startswith("X-")
+        ):
+            return "FAIL"
+        if "INFO" in upper:
+            return "INFO"
+        return "UNKNOWN"
+
     def write_summary_sheet(
         self,
         wb: Workbook,
@@ -162,7 +188,11 @@ class ExcelWriter:
             )
 
             # Column C: Status Enum (for conditional formatting)
-            status_enum = result.get("status_enum", "UNKNOWN")
+            status_enum = result.get("status_enum")
+            if not status_enum:
+                status_enum = self._legacy_status_to_enum(
+                    result.get("status") or result.get("status_message") or ""
+                )
             ws.cell(row=row_idx, column=3, value=status_enum)
 
             # Column D: Status Category (sanitize for formula injection)
@@ -1363,3 +1393,104 @@ class ExcelWriter:
             ws.cell(row=agg_row, column=1, value=k)
             ws.cell(row=agg_row, column=2, value=v)
             agg_row += 1
+
+    def write_contract_v2_sheets(
+        self, wb: Workbook, results: List[Dict], telemetry=None
+    ) -> None:
+        """
+        Write v2 output contract sheets while keeping legacy sheets intact.
+
+        Sheets:
+        - Summary: run-level headline metrics
+        - Findings: normalized row-level findings
+        - Metadata: run metadata + integrity checks
+        """
+        # Summary
+        summary_ws = wb.create_sheet(title="Summary")
+        summary_ws.append(["Metric", "Value"])
+        total = len(results)
+        status_counts: Dict[str, int] = {}
+        for r in results:
+            s = str(r.get("status_enum") or "UNKNOWN").upper()
+            status_counts[s] = status_counts.get(s, 0) + 1
+        summary_ws.append(["Total tables", total])
+        for status in sorted(status_counts.keys()):
+            summary_ws.append([f"Count {status}", status_counts[status]])
+        summary_ws.append(
+            [
+                "Integrity findings_count_matches_total",
+                sum(status_counts.values()) == total,
+            ]
+        )
+        summary_ws.column_dimensions["A"].width = 42
+        summary_ws.column_dimensions["B"].width = 24
+
+        # Findings
+        findings_ws = wb.create_sheet(title="Findings")
+        findings_ws.append(
+            [
+                "table_index",
+                "table_name",
+                "status_enum",
+                "rule_id",
+                "validator_type",
+                "failure_reason_code",
+                "extractor_engine",
+                "quality_score",
+                "run_id",
+            ]
+        )
+        run_id = ""
+        if (
+            telemetry is not None
+            and getattr(telemetry, "run_telemetry", None) is not None
+        ):
+            run_id = getattr(telemetry.run_telemetry, "run_id", "") or ""
+        for idx, r in enumerate(results, start=1):
+            ctx = r.get("context") or {}
+            findings_ws.append(
+                [
+                    r.get("table_index", idx),
+                    sanitize_excel_value(r.get("table_name") or ""),
+                    sanitize_excel_value(r.get("status_enum") or "UNKNOWN"),
+                    sanitize_excel_value(r.get("rule_id") or ""),
+                    sanitize_excel_value(ctx.get("validator_type") or ""),
+                    sanitize_excel_value(
+                        r.get("failure_reason_code")
+                        or ctx.get("failure_reason_code")
+                        or ""
+                    ),
+                    sanitize_excel_value(ctx.get("extractor_engine") or ""),
+                    ctx.get("quality_score"),
+                    sanitize_excel_value(run_id),
+                ]
+            )
+        for col, width in zip("ABCDEFGHI", [12, 36, 16, 22, 22, 26, 20, 14, 36]):
+            findings_ws.column_dimensions[col].width = width
+
+        # Metadata
+        metadata_ws = wb.create_sheet(title="Metadata")
+        metadata_ws.append(["Key", "Value"])
+        tool_version = ""
+        git_commit_hash = ""
+        run_timestamp = ""
+        if (
+            telemetry is not None
+            and getattr(telemetry, "run_telemetry", None) is not None
+        ):
+            tool_version = getattr(telemetry.run_telemetry, "tool_version", "") or ""
+            git_commit_hash = (
+                getattr(telemetry.run_telemetry, "git_commit_hash", "") or ""
+            )
+            run_timestamp = getattr(telemetry.run_telemetry, "run_timestamp", "") or ""
+        metadata_ws.append(["run_id", run_id])
+        metadata_ws.append(["tool_version", tool_version])
+        metadata_ws.append(["git_commit_hash", git_commit_hash])
+        metadata_ws.append(["run_timestamp", run_timestamp])
+        metadata_ws.append(["integrity_findings_rows", max(findings_ws.max_row - 1, 0)])
+        metadata_ws.append(["integrity_total_tables", total])
+        metadata_ws.append(
+            ["integrity_check", max(findings_ws.max_row - 1, 0) == total]
+        )
+        metadata_ws.column_dimensions["A"].width = 34
+        metadata_ws.column_dimensions["B"].width = 48

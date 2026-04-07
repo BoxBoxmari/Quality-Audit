@@ -1,8 +1,9 @@
 """
 Smoke E2E: run_regression_2docs pipeline.
 
-When 2 default DOCX exist (tests/test_data or tests/data), runs full regression
-and asserts report and outputs. Otherwise skips.
+When a complete default pair exists per resolve_default_doc_paths (same base dir:
+data/ → tests/test_data/ → tests/data/ → test_data/), runs full regression and
+asserts report and outputs. Otherwise skips.
 """
 
 import importlib.util
@@ -25,14 +26,16 @@ class TestRunRegression2DocsSmoke:
 
     def test_run_regression_2docs_when_default_docs_exist(self, tmp_path):
         """
-        When CP Vietnam and CJCGV DOCX exist in tests/test_data or tests/data,
+        When CP Vietnam and CJCGV DOCX exist in one prioritized base directory,
         run_regression() produces report and per-doc results.
         """
         doc_paths = _default_doc_paths()
         if len(doc_paths) < 2:
             pytest.skip(
-                "Need 2 DOCX (e.g. CP Vietnam-FS2018-Consol-EN.docx, "
-                "CJCGV-FS2018-EN- v2.docx) in tests/test_data or tests/data"
+                "Need both DOCX in the same folder under project root (priority: "
+                "data/ → tests/test_data/ → tests/data/ → test_data/): "
+                "CP Vietnam-FS2018-Consol-EN.docx; CJCGV-FS2018-EN- v2.docx or "
+                "CJCGV-FS2018-EN- v2 .docx (.docx case-insensitive)"
             )
         out = run_regression(
             doc_paths,

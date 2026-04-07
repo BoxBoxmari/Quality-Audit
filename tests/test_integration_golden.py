@@ -41,9 +41,9 @@ class TestIntegrationGolden:
         wb = load_workbook(excel_path)
         assert "Tổng hợp kiểm tra" in wb.sheetnames
         ws_summary = wb["Tổng hợp kiểm tra"]
-        assert ws_summary.max_row >= 2, (
-            "Summary sheet should have header + at least one data row"
-        )
+        assert (
+            ws_summary.max_row >= 2
+        ), "Summary sheet should have header + at least one data row"
         # Summary sheet: A=Tên bảng, B=Trạng thái kiểm tra, C=Status Enum (excel_writer write_summary_sheet)
         assert ws_summary.cell(row=1, column=3).value == "Status Enum"
 
@@ -55,9 +55,9 @@ class TestIntegrationGolden:
             if ws_run.cell(row=r, column=1).value == "Per-Table Extraction":
                 header_row = r + 1
                 break
-        assert header_row is not None, (
-            "Per-Table Extraction section not found on Run metadata"
-        )
+        assert (
+            header_row is not None
+        ), "Per-Table Extraction section not found on Run metadata"
         assert ws_run.cell(row=header_row, column=3).value == "Heading Source"
         assert ws_run.cell(row=header_row, column=12).value == "Classifier Reason"
         assert ws_run.cell(row=header_row, column=14).value == "Assertions Count"
