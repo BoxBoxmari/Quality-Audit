@@ -151,11 +151,10 @@ def write_tax_map_for_cli(spec: RunSpec, target_path: Path) -> Path:
         if spec.default_rate_percent is not None
         else float(spec.all_rate_percent if spec.all_rate_percent is not None else 25.0)
     )
-    files_payload: dict[str, float] = {}
-    payload = {"default": default_pct, "files": files_payload}
+    payload: Dict[str, Any] = {"default": default_pct, "files": {}}
     for file_path in spec.discovered_files:
         key = file_key_for(file_path, spec.base_path)
-        files_payload[key] = float(spec.per_file_rates_percent.get(key, default_pct))
+        payload["files"][key] = float(spec.per_file_rates_percent.get(key, default_pct))
     target_path.parent.mkdir(parents=True, exist_ok=True)
     with open(target_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
@@ -183,29 +182,29 @@ def run_spec(spec: RunSpec, log: LogFn, progress: Optional[ProgressFn] = None) -
 
     # multi_files path keeps CLI batch contract semantics without direct UI loops
     tax_config = build_tax_config(spec)
-    context = AuditContext(
-        cache=LRUCacheManager(max_size=spec.cache_size),
-        tax_rate_config=tax_config,
-        base_path=spec.base_path
-        or (
-            spec.discovered_files[0].parent
-            if spec.discovered_files
-            else spec.output_dir
-        ),
-    )
     max_workers = _optimal_concurrency()
     async_reader = AsyncWordReader(max_workers=max_workers)
-    service = AuditService(
-        context=context,
-        async_word_reader=async_reader,
-        excel_writer=ExcelWriter(
-            previous_output_path=(
-                str(spec.previous_output) if spec.previous_output else None
-            )
-        ),
-        file_handler=FileHandler(),
+
+    base_path_for_context = spec.base_path or (
+        spec.discovered_files[0].parent if spec.discovered_files else spec.output_dir
     )
-    batch = BatchProcessor(service, max_concurrent=max_workers)
+    previous_output_path = str(spec.previous_output) if spec.previous_output else None
+    file_handler = FileHandler()
+
+    def _make_audit_service() -> AuditService:
+        context = AuditContext(
+            cache=LRUCacheManager(max_size=spec.cache_size),
+            tax_rate_config=tax_config,
+            base_path=base_path_for_context,
+        )
+        return AuditService(
+            context=context,
+            async_word_reader=async_reader,
+            excel_writer=ExcelWriter(previous_output_path=previous_output_path),
+            file_handler=file_handler,
+        )
+
+    batch = BatchProcessor(_make_audit_service, max_concurrent=max_workers)
     total_files = len(spec.discovered_files)
     log(f"Batch contract: {total_files} file(s), workers={max_workers}")
 

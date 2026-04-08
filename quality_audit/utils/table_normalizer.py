@@ -662,14 +662,6 @@ class TableNormalizer:
             )
         ]
         # Compatibility contract:
-        # - never treat Description as code-like when explicit code headers are already 3+ (e.g. Code, Code.1, Code.2)
-        if len(explicit_code_headers) >= 3:
-            code_like = [
-                c
-                for c in code_like
-                if "description" not in TableNormalizer.normalize_header(c)
-            ]
-        # Compatibility contract:
         # - include Description as code-like only in multi-code header variants
         #   with 1..2 explicit code headers (e.g. Code + Code.1),
         # - do not include it when no explicit code header exists,

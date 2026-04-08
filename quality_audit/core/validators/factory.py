@@ -13,7 +13,6 @@ import pandas as pd
 from ..cache_manager import AuditContext
 from ..routing.table_type_classifier import TableType, TableTypeClassifier
 from .balance_sheet_validator import BalanceSheetValidator
-from ...config.feature_flags import get_feature_flags as get_feature_flags
 
 # Import here to avoid circular imports
 from .base_validator import BaseValidator
@@ -68,20 +67,6 @@ class ValidatorFactory:
             table, heading, heading_confidence=heading_confidence
         )
 
-        flags = get_feature_flags()
-        is_parity_mode = bool(flags.get("legacy_parity_mode", False))
-        bs_gating_enabled = bool(flags.get("routing_balance_sheet_gating_enabled", False))
-        bs_numeric_threshold = float(flags.get("routing_balance_sheet_numeric_threshold", 0.0))
-        bs_gating_policy = str(flags.get("routing_balance_sheet_gating_policy", "")).strip()
-
-        def _numeric_evidence_score(df: pd.DataFrame) -> float:
-            # Heuristic: ratio of cells convertible to numbers.
-            total = int(df.size) if hasattr(df, "size") else 0
-            if total <= 0:
-                return 0.0
-            numeric = pd.to_numeric(df.stack(dropna=False), errors="coerce")
-            return float(numeric.notna().sum() / total)
-
         # Store classification result context for observability (Phase 0: classifier metadata)
         if context and result.context:
             result.context["classifier_primary_type"] = result.table_type.value
@@ -89,15 +74,6 @@ class ValidatorFactory:
             context.set_last_classification_context(result.context)
 
         if result.table_type == TableType.FS_BALANCE_SHEET:
-            if bs_gating_enabled and not is_parity_mode:
-                score = _numeric_evidence_score(table)
-                if score < bs_numeric_threshold and bs_gating_policy == "downgrade_to_generic":
-                    if context:
-                        last_ctx = context.get_last_classification_context() or {}
-                        last_ctx["numeric_evidence_score"] = score
-                        last_ctx["downgraded_from"] = "BalanceSheetValidator"
-                        context.set_last_classification_context(last_ctx)
-                    return (GenericTableValidator(context=context), None)
             return (BalanceSheetValidator(context=context), None)
         elif result.table_type == TableType.FS_INCOME_STATEMENT:
             return (IncomeStatementValidator(context=context), None)

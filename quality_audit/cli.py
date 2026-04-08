@@ -167,22 +167,26 @@ Examples:
         max_concurrent = _get_optimal_concurrency()
         print(f"Using concurrency: {max_concurrent} workers")
 
-        # Initialize components
-        cache_manager = LRUCacheManager(max_size=args.cache_size)
-        context = AuditContext(
-            cache=cache_manager, tax_rate_config=tax_config, base_path=base_path
-        )
+        # Initialize batch components.
+        # BatchProcessor sẽ gọi service_factory để tạo service mới cho mỗi file,
+        # đảm bảo không có state/cache bleed giữa các file cùng một lần chạy.
         async_word_reader = AsyncWordReader(max_workers=max_concurrent)
 
-        audit_service = AuditService(
-            context=context,
-            async_word_reader=async_word_reader,
-            excel_writer=ExcelWriter(previous_output_path=args.previous_output),
-            file_handler=FileHandler(),
-        )
+        def _make_audit_service() -> AuditService:
+            cache_manager = LRUCacheManager(max_size=args.cache_size)
+            context = AuditContext(
+                cache=cache_manager, tax_rate_config=tax_config, base_path=base_path
+            )
+            return AuditService(
+                context=context,
+                async_word_reader=async_word_reader,
+                excel_writer=ExcelWriter(previous_output_path=args.previous_output),
+                file_handler=FileHandler(),
+            )
 
-        # Process batch
-        batch_processor = BatchProcessor(audit_service, max_concurrent=max_concurrent)
+        batch_processor = BatchProcessor(
+            _make_audit_service, max_concurrent=max_concurrent
+        )
 
         print("\nStarting batch processing...")
         print("=" * 60)

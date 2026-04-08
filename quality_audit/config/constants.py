@@ -15,10 +15,10 @@ from quality_audit.core.legacy_audit.catalogs import (
     TABLES_NEED_COLUMN_CHECK,
     TABLES_WITHOUT_TOTAL,
 )
+from quality_audit.core.legacy_audit.codes import RELATED_PARTY_LABELS as RE_PARTY_TABLE
 from quality_audit.core.legacy_audit.codes import (
-    RELATED_PARTY_LABELS as RE_PARTY_TABLE,
+    VALID_CODES,
 )
-from quality_audit.core.legacy_audit.codes import VALID_CODES
 from quality_audit.core.legacy_audit.coloring import (
     BLUE_FILL,
     GREEN_FILL,

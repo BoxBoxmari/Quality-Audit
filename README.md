@@ -119,10 +119,8 @@ python -m quality_audit.ui_ctk
 ### Runtime and flow policy
 
 - Use a single project runtime at `./.venv`.
-- Main execution flow uses package `quality_audit` only.
-- `legacy/` is reference-only and must not be used as runtime/test entrypoint in the main flow.
-- Baseline authoritative sources are locked to `legacy/main.py` and `legacy/Quality Audit.py`.
-- Runtime must not import legacy scripts directly; baseline rules are ported under `quality_audit/core/legacy_audit/`.
+- **Primary validation authority** is `legacy/main.py` (single-path runtime). The packaged runtime (`quality_audit`) orchestrates extraction, routing, reporting, and delegates rule execution to the legacy authority where required.
+- `quality_audit/core/legacy_audit/` contains adapters/shims for baseline routing and compatibility, but does not replace the legacy authority module.
 
 **GUI Features:**
 
@@ -365,11 +363,14 @@ if handler.validate_path("document.docx"):
 
 ## Utility Scripts
 
-The `scripts/` directory contains tools for analysis and debugging:
+The `scripts/` directory contains small, production-safe utilities:
 
-- `scripts/verify_installation.py`: Check if environment and dependencies are correctly set up. Verifies Python version, required packages, and system configuration.
-- `scripts/analyze_output.py`: Analyze validation results from Excel files. Counts PASS/FAIL/WARN/ERROR statuses and provides summary statistics. Accepts file paths as command-line arguments.
-- `scripts/analyze_failures.py`: Analyze FAIL/WARN patterns in Excel output files. Identifies common error patterns and routing issues.
+- `scripts/verify_installation.py`: Verify Python environment and optional system binaries (for render-first).
+- `scripts/check_regression_fixtures.py`: Preflight check for local-only DOCX fixtures used by E2E regression scripts.
+- `scripts/run_regression_2docs.py`: Run a fixed 2-DOCX regression pipeline (local-only fixtures).
+- `scripts/aggregate_failures.py`: Aggregate XLSX outputs into `reports/aggregate_failures.{csv,json}`.
+- `scripts/freeze_parity_baseline.py`: Freeze `aggregate_failures.json` into `parity/baselines/` with metadata.
+- `scripts/benchmark_mvp.py`: Benchmark key pipeline steps and write perf baselines.
 
 **Usage**:
 
@@ -377,12 +378,9 @@ The `scripts/` directory contains tools for analysis and debugging:
 # Verify installation
 python scripts/verify_installation.py
 
-# Analyze output files
-python scripts/analyze_output.py output1.xlsx output2.xlsx
-python scripts/analyze_output.py output1.xlsx --json  # JSON output format
-
-# Analyze failures
-python scripts/analyze_failures.py output1.xlsx output2.xlsx
+# Run 2-doc regression (requires local fixtures)
+python scripts/check_regression_fixtures.py --strict
+python scripts/run_regression_2docs.py --output-dir reports
 ```
 
 ## Support

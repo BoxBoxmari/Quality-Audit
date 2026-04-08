@@ -97,14 +97,6 @@ class CashFlowValidator(BaseValidator):
             prof = profiles[parent_code]
             present_profile = [c for c in prof if c in present_codes]
             # Keep strict formula when profile coverage is materially present.
-            #
-            # Special-case: legacy code "18" is an "indirect adjustment block" subtotal in some
-            # templates, but in other templates the row above codes 14–17 is a different subtotal.
-            # If we only see 2/4 components, validating "18" becomes error-prone (e.g., treating
-            # interest+tax paid as a subtotal). Require higher coverage for "18".
-            if parent_code == "18" and len(present_profile) < 3:
-                return [], "section_profile_insufficient_coverage"
-
             if len(present_profile) >= max(2, min(4, len(prof) // 2)):
                 return present_profile, "section_profile"
 
@@ -199,18 +191,6 @@ class CashFlowValidator(BaseValidator):
                 code_col = TableNormalizer._detect_code_column_with_synonyms(df_norm)
             if not code_col and "__canonical_code__" in df_norm.columns:
                 code_col = "__canonical_code__"
-
-            # Guardrail: never accept "Description"-like columns as code columns unless
-            # they actually contain code-shaped tokens with meaningful density.
-            if code_col and "description" in str(code_col).strip().lower():
-                ser = df_norm[code_col].astype(object)
-                sample = [
-                    re.sub(r"\s+", "", str(v).strip())
-                    for v in ser.dropna().head(25).tolist()
-                ]
-                code_hits = sum(1 for v in sample if v and self._CODE_PATTERN.match(v))
-                if code_hits < 3:
-                    code_col = None
 
             if not code_col:
                 canon = metadata.get("canon_report") or {}

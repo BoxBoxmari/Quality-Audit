@@ -18,7 +18,7 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable, Mapping, cast
+from typing import Any, Iterable, Mapping
 
 GROUP_FIELD_NAMES = (
     "validator_type",
@@ -56,8 +56,7 @@ def coerce_sources(value: Any) -> tuple[str, ...]:
 
 
 def group_key_from_record(rec: Mapping[str, Any]) -> GroupKey:
-    # GROUP_FIELD_NAMES is a fixed 5-tuple; cast keeps mypy aware of tuple arity.
-    return cast(GroupKey, tuple(_s(rec.get(name)) for name in GROUP_FIELD_NAMES))
+    return tuple(_s(rec.get(name)) for name in GROUP_FIELD_NAMES)
 
 
 def index_aggregate_groups(

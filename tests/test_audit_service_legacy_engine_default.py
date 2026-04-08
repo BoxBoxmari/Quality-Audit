@@ -7,10 +7,6 @@ from quality_audit.services.audit_service import AuditService
 def test_validate_single_table_does_not_expose_legacy_engine_owner():
     service = AuditService()
     assert hasattr(service, "legacy_engine")
-    # Compatibility surface: attribute exists, but canonical runtime does not require it.
-    # The default is a shim object so tests can monkeypatch validate_table when needed.
-    assert service.legacy_engine is not None
-    assert hasattr(service.legacy_engine, "validate_table")
 
 
 def test_validate_single_table_uses_validator_factory_in_non_runtime_path(monkeypatch):

@@ -202,17 +202,6 @@ class BalanceSheetValidator(BaseValidator):
                     (c for c in df_norm.columns if str(c).strip().lower() == "code"),
                     None,
                 )
-            # Guardrail: if an explicit "Code" header exists, prefer it over any
-            # inferred non-code column selected by heuristics (e.g., "ASSETS", "Column_0").
-            explicit_code_col = next(
-                (c for c in df_norm.columns if str(c).strip().lower() == "code"), None
-            )
-            if explicit_code_col is not None and (
-                code_col is None or str(code_col).strip().lower() != "code"
-            ):
-                code_col = explicit_code_col
-                metadata["code_column"] = explicit_code_col
-                metadata["effective_code_column"] = explicit_code_col
 
             if not code_col:
                 # Last ditch: try to detect it again if Normalizer missed it (unlikely)

@@ -10,10 +10,3 @@ opencv-python>=4.9.0
 pytesseract>=0.3.10
 PyMuPDF>=1.24.0
 pdf2image>=1.17.0
-
-# NOTE:
-# - legacy/main.py is the primary canonical runtime (does not require ML deps).
-# - TableTransformerRecognizer (render-first advanced structure) is optional and
-#   requires torch + transformers when enabled/available.
-torch
-transformers

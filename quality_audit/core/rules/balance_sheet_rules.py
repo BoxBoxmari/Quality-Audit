@@ -8,7 +8,7 @@ based on line item codes.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
@@ -101,14 +101,14 @@ class BalanceSheetRules(AuditRule):
             list(code_to_idx.keys()),
         )
 
-        formulas: list[dict[str, object]] = [
+        formulas = [
             {"target": "270", "add": ["100", "200"], "sub": []},
             {"target": "440", "add": ["300", "400"], "sub": []},
             {"target": "270", "add": ["440"], "sub": []},
         ]
 
         for formula in formulas:
-            target_code = str(formula["target"])
+            target_code = formula["target"]
             if target_code not in code_to_idx:
                 continue
 
@@ -121,8 +121,7 @@ class BalanceSheetRules(AuditRule):
                 source_rows = []
                 valid_components = False
 
-                add_codes = cast(list[str], formula["add"])
-                for code in add_codes:
+                for code in formula["add"]:
                     if code in code_to_idx:
                         r = code_to_idx[code]
                         v = self._parse_float(df.iloc[r][col])
@@ -143,7 +142,7 @@ class BalanceSheetRules(AuditRule):
                 tolerance = materiality.compute(magnitude, table_type)
 
                 # Special description for Assets = Liabilities + Equity
-                if target_code == "270" and "440" in add_codes:
+                if target_code == "270" and "440" in formula["add"]:
                     assertion_text = f"Tài sản = Nguồn vốn [{col}]"
                 else:
                     assertion_text = f"BS Formula Code {target_code} [{col}]"

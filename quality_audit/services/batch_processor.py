@@ -21,16 +21,36 @@ class BatchProcessor:
     simultaneously, preventing resource exhaustion.
     """
 
-    def __init__(self, audit_service: AuditService, max_concurrent: int = 4):
+    def __init__(
+        self,
+        service_factory: Union[AuditService, Callable[[], AuditService]],
+        max_concurrent: int = 4,
+    ):
         """
         Initialize batch processor.
 
         Args:
-            audit_service: AuditService instance for processing documents
+            service_factory: Either an AuditService instance (legacy) or a callable
+                returning a fresh AuditService per processed file.
             max_concurrent: Maximum number of files to process concurrently (default: 4)
         """
-        self.audit_service = audit_service
-        self.max_concurrent = max_concurrent
+        if isinstance(service_factory, AuditService):
+            # Backward compatibility: wrap static instance as a factory.
+            self._service_factory: Callable[[], AuditService] = lambda: service_factory
+        else:
+            self._service_factory = service_factory
+
+        # NOTE: Canonical runtime delegates into legacy/main.py which owns
+        # module-level mutable globals. True parallelism is not safe without
+        # process isolation or per-task isolated legacy runtime instances.
+        #
+        # This bugfix makes the serialization explicit by enforcing max_concurrent=1
+        # (instead of silently serializing inside a lock while presenting higher
+        # concurrency settings).
+        self.max_concurrent = min(int(max_concurrent), 1)
+
+        # Legacy module owns module-level mutable globals, so serialize canonical execution.
+        self._legacy_lock = asyncio.Lock()
 
     async def process_batch_async(
         self,
@@ -80,9 +100,12 @@ class BatchProcessor:
                     input_path = Path(file_path)
                     output_file = output_path / f"{input_path.stem}{output_suffix}"
 
+                    service = self._service_factory()
                     # Process document asynchronously
-                    result = await self.audit_service.process_document_async(
-                        str(file_path), str(output_file)
+                    result = await service.process_document_async(
+                        str(file_path),
+                        str(output_file),
+                        legacy_lock=self._legacy_lock,  # type: ignore[arg-type]
                     )
 
                     # Add file path to result for tracking

@@ -228,11 +228,10 @@ class ScopedVerticalSumRule(AuditRule):
                         "Phạm vi tổng dọc không được lập kế hoạch; bỏ qua kiểm tra "
                         "sum-to-total cho bảng này"
                     ),
-                    # INFO-only evidence: keep numeric fields as floats for type safety.
-                    expected=0.0,
-                    actual=0.0,
-                    diff=0.0,
-                    tolerance=0.0,
+                    expected=None,
+                    actual=None,
+                    diff=None,
+                    tolerance=None,
                     is_material=False,
                     severity=Severity.INFO,
                     confidence=1.0,

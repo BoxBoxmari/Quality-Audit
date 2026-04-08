@@ -6,7 +6,6 @@ import sys
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, cast
 from typing import Dict, List, Optional
 
 import customtkinter as ctk
@@ -356,9 +355,7 @@ class CTKAuditApp(ctk.CTk):
     def _on_rescan(self) -> None:
         self._detect_source_from_path_entry()
         discovered, base_path = discover_docx(
-            cast(Literal["folder", "file", "multi_files"], self.input_source_type),
-            self.input_source_path,
-            self.selected_files,
+            self.input_source_type, self.input_source_path, self.selected_files
         )
         self.discovered_files = discovered
         self.base_path = base_path
@@ -533,8 +530,7 @@ class CTKAuditApp(ctk.CTk):
                 elif kind == "progress" and isinstance(payload, dict):
                     self._on_progress(payload)
                 elif kind == "done":
-                    exit_code = int(payload) if isinstance(payload, int) else int(str(payload))
-                    self._on_run_complete(exit_code, None)
+                    self._on_run_complete(int(payload), None)
                 elif kind == "error":
                     self._on_run_complete(1, str(payload))
         except queue.Empty:
@@ -570,18 +566,8 @@ class CTKAuditApp(ctk.CTk):
             self.progress_label.configure(text="Progress: 0/0")
 
     def _on_progress(self, payload: Dict[str, object]) -> None:
-        processed_raw = payload.get("processed", 0)
-        total_raw = payload.get("total", 0)
-        processed = (
-            int(processed_raw)
-            if isinstance(processed_raw, int)
-            else int(str(processed_raw)) if processed_raw is not None else 0
-        )
-        total = (
-            int(total_raw)
-            if isinstance(total_raw, int)
-            else int(str(total_raw)) if total_raw is not None else 0
-        )
+        processed = int(payload.get("processed", 0) or 0)
+        total = int(payload.get("total", 0) or 0)
         current_file = str(payload.get("current_file", "") or "")
         success = bool(payload.get("success", False))
         error = str(payload.get("error", "") or "")

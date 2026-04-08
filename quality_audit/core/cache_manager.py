@@ -287,8 +287,8 @@ class AuditContext:
         """
         Clear run-specific state for this task.
 
-        Note: shared cache is NOT cleared here to prevent interference
-        in concurrent batch processing.
+        Per-file isolation is enforced by creating a fresh ``AuditContext`` (and
+        its cache manager) for each processed file in batch mode.
         """
         self._marks_var.set(set())
         self._current_filename_var.set(None)

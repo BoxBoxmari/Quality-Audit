@@ -15,7 +15,6 @@ from ..config.feature_flags import get_feature_flags
 from ..utils.numeric_utils import compute_numeric_evidence_score
 from ..utils.skip_classifier import classify_footer_signature
 from .extractors import (
-    DocxToHtmlExtractor,
     OOXMLTableGridExtractor,
     PythonDocxExtractor,
 )
@@ -1176,40 +1175,6 @@ class WordReader:
         except Exception as e:
             logger.debug("Python-docx extractor skipped: %s", e)
 
-        # Engine C (HTML export fallback): LibreOffice docx->html, then parse first HTML table.
-        # Only safe for table_index==0 because the converter returns the first HTML table.
-        flags = get_feature_flags()
-        if table_index == 0 and bool(
-            flags.get("extraction_fallback_prefer_advanced_before_legacy", True)
-        ):
-            try:
-                engine_attempts.append("html_export")
-                html = DocxToHtmlExtractor()
-                res_h = html.extract_from_path(file_path)
-                if res_h.is_usable and res_h.grid:
-                    return (
-                        res_h.grid,
-                        {
-                            "extractor_engine": "html_export",
-                            "extractor_usable_reason": "usable",
-                            "engine_attempts": list(engine_attempts),
-                            "quality_score": getattr(res_h, "quality_score", 0.0),
-                            "quality_flags": list(getattr(res_h, "quality_flags", []) or []),
-                            "failure_reason_code": getattr(
-                                res_h, "failure_reason_code", None
-                            ),
-                            "invariants_failed": list(
-                                getattr(res_h, "invariant_violations", []) or []
-                            ),
-                            "grid_cols_expected": None,
-                            "grid_cols_built": getattr(res_h, "cols", None),
-                            "gridSpan_count": None,
-                            "vMerge_count": None,
-                        },
-                    )
-            except Exception as e:
-                logger.debug("HTML export fallback skipped: %s", e)
-
         # Legacy fallback
         return (
             self._reconstruct_table_grid(table),
@@ -1293,19 +1258,6 @@ class WordReader:
         evidence["prev_cols"] = len(prev_df.columns)
         evidence["curr_cols"] = len(curr_df.columns)
         if len(curr_df.columns) != len(prev_df.columns):
-            col_diff = abs(len(curr_df.columns) - len(prev_df.columns))
-            evidence["column_count_diff"] = col_diff
-            # Allow 1-column drift for strong continuity cases (e.g., CY-only vs CY+PY).
-            # This is intentionally narrow to avoid accidental merges.
-            if (
-                col_diff == 1
-                and curr_note_number is not None
-                and prev_heading is not None
-                and curr_heading == prev_heading
-                and (paragraphs_since <= 2 and not long_paragraph)
-                and not page_break
-            ):
-                return True, "MERGED_CONTINUITY", evidence
             return False, "COLUMN_COUNT_MISMATCH", evidence
 
         # Proximity check
@@ -1476,7 +1428,7 @@ class WordReader:
                 # V-4: Scan previous 1-8 paragraphs for best candidate
                 best_candidate_text = None
                 best_score: float = 0.0
-                candidates_log: list[dict[str, float | int | str]] = []
+                candidates_log = []
                 flags = get_feature_flags()
                 use_heading_v2 = flags.get("heading_inference_v2", False)
 
@@ -1544,22 +1496,10 @@ class WordReader:
                         # But keep scanning in case there's a heading slightly further up (e.g. "APPENDIX" then "Table 1")
                         # Actually closest high score is usually preferred.
 
-                # Use inferred heading if found.
-                # If there were no paragraphs between adjacent tables, carry forward
-                # the previous heading to avoid spuriously treating the first data row
-                # as a heading.
-                prev_heading: Optional[str] = current_heading
+                # Use inferred heading if found
                 current_heading_candidate = best_candidate_text
                 # P1-1: Fallback Heading from Table First Row (guarded by feature flag)
                 heading_source = "paragraph"
-
-                if paragraphs_since_last_table == 0 and prev_heading:
-                    current_heading_candidate = prev_heading
-                    # Preserve the source label as "paragraph" since the heading
-                    # originated from a paragraph in the same continuous block.
-                    heading_source = "paragraph"
-                    # Ensure confidence is not artificially low for a deliberate carry-forward.
-                    best_score = max(best_score, 9.0)
 
                 use_first_row_fallback = flags.get(
                     "heading_fallback_from_table_first_row", True
@@ -1594,9 +1534,9 @@ class WordReader:
                         else 0.5
                     )
 
-                # Sort top 3 candidates by score descending (score is always a float for logged candidates)
+                # Sort top 3 candidates by score descending
                 top_candidates = sorted(
-                    candidates_log, key=lambda x: float(x.get("score", 0.0)), reverse=True
+                    candidates_log, key=lambda x: x["score"], reverse=True
                 )[:3]
 
                 table_context: Dict[str, Any] = {
@@ -1828,10 +1768,9 @@ class WordReader:
                         headings.append(current_heading or "")
                         table_contexts.append(table_context)
 
-                # Reset paragraph buffer after each table so paragraph-derived headings
-                # don't bleed forward. Keep `current_heading` so it can be carried
-                # forward across adjacent tables when there is no explicit boundary.
+                # Comment 2: reset buffer after each table so heading does not bleed to next table
                 prior_paragraphs.clear()
+                current_heading = None
                 paragraphs_since_last_table = 0
                 long_paragraph_since_last_table = False
                 self._page_break_since_last_table = False

@@ -4,8 +4,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-venv/
-.venv/
 
 # Testing
 .pytest_cache/
@@ -16,7 +14,6 @@ htmlcov/
 
 # IDEs
 .vscode/
-.cursor/
 *.swp
 *.swo
 *~
@@ -45,3 +42,5 @@ scripts/kpi_baseline_*.json
 # Agent/Assistant
 .agent/
 .cursor/
+
+# (Do not commit IDE/assistant state)

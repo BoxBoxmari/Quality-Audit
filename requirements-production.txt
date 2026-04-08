@@ -1,0 +1,8 @@
+numpy>=1.23.0
+openpyxl>=3.0.0
+pandas>=1.5.0
+python-docx>=0.8.11
+
+# GUI runtime (optional for CLI-only deployments)
+customtkinter>=5.2.2
+

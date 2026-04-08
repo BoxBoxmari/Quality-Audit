@@ -1286,48 +1286,35 @@ class GenericTableValidator(BaseValidator):
                     issues.append(commentCB)
 
         # SCRUM-12: Cross-check NBV with BSPL using year alignment
-        flags = get_feature_flags()
-        is_parity_mode = bool(flags.get("legacy_parity_mode", False))
-
-        # Parity lock: fixed-assets cross-check uses legacy last-two-column semantics,
-        # even if a detector returns a plausible but incorrect (CY,PY) pair.
-        if is_parity_mode and len(df.columns) >= 2:
-            detected_cur_col = None
-            detected_prior_col = None
-            CY_col_idx = len(df.columns) - 1
-            PY_col_idx = len(df.columns) - 2
-        else:
-            # Prefer numeric Total/Tổng column: Priority 1 exact/standalone, Priority 2 partial match
-            roles, _, _ = infer_column_roles(df)
-            total_col = None
+        # Prefer numeric Total/Tổng column: Priority 1 exact/standalone, Priority 2 partial match
+        roles, _, _ = infer_column_roles(df)
+        total_col = None
+        for col in df.columns:
+            col_lower = str(col).lower().strip()
+            if (
+                col_lower in ("total", "tổng")
+                or col_lower.endswith(" total")
+                or col_lower.endswith(" tổng")
+            ):
+                if col in roles and roles[col] == ROLE_NUMERIC:
+                    total_col = col
+                    break
+        if not total_col:
             for col in df.columns:
-                col_lower = str(col).lower().strip()
-                if (
-                    col_lower in ("total", "tổng")
-                    or col_lower.endswith(" total")
-                    or col_lower.endswith(" tổng")
-                ):
+                if re.search(r"\btotal\b|\btổng\b", str(col).lower().strip()):
                     if col in roles and roles[col] == ROLE_NUMERIC:
                         total_col = col
                         break
-            if not total_col:
-                for col in df.columns:
-                    if re.search(r"\btotal\b|\btổng\b", str(col).lower().strip()):
-                        if col in roles and roles[col] == ROLE_NUMERIC:
-                            total_col = col
-                            break
-            if total_col:
-                detected_cur_col = total_col
-                detected_prior_col = total_col
-            else:
-                detected_cur_col, detected_prior_col = (
-                    ColumnDetector.detect_financial_columns_advanced(df)
-                )
+        if total_col:
+            detected_cur_col = total_col
+            detected_prior_col = total_col
+        else:
+            detected_cur_col, detected_prior_col = (
+                ColumnDetector.detect_financial_columns_advanced(df)
+            )
 
         # P0.3: When detection returns (None, None), try _infer_total_column, then feature-flagged fallback
-        if not detected_cur_col and not detected_prior_col and not (
-            is_parity_mode and len(df.columns) >= 2
-        ):
+        if not detected_cur_col and not detected_prior_col:
             # Ticket-2: Try anchor-based total column inference
             anchor_rows = []
             if AD_start_row_idx is not None and AD_start_row_idx - 1 >= 0:
@@ -1354,11 +1341,11 @@ class GenericTableValidator(BaseValidator):
                 PY_col_idx = len(df.columns) - 2
             else:
                 return ValidationResult(
-                    status="INFO_SKIPPED: Không có cặp cột CY/PY đủ bằng chứng số",
+                    status="FAIL_TOOL_EXTRACT: Không có cặp cột CY/PY đủ bằng chứng số",
                     marks=marks,
                     cross_ref_marks=cross_ref_marks,
                     rule_id="NO_NUMERIC_EVIDENCE",
-                    status_enum="INFO_SKIPPED",
+                    status_enum="FAIL_TOOL_EXTRACT",
                     context={"failure_reason_code": "NO_NUMERIC_EVIDENCE"},
                 )
         else:
@@ -1519,17 +1506,8 @@ class GenericTableValidator(BaseValidator):
             more = f" ... (+{len(issues) - 10} dòng)" if len(issues) > 10 else ""
             status = f"FAIL: Fixed assets - kiểm tra công thức: {len(issues)} sai lệch. {preview}{more}"
 
-        # Observability: count executed checks. For this validator path, each produced mark
-        # corresponds to a concrete assertion (PASS/FAIL) that was evaluated.
-        assertions_count = len(marks) + len(cross_ref_marks)
-
         return ValidationResult(
-            status=status,
-            marks=marks,
-            cross_ref_marks=cross_ref_marks,
-            rule_id="FIXED_ASSET_VALIDATION",
-            status_enum="PASS" if not issues else "FAIL",
-            assertions_count=assertions_count,
+            status=status, marks=marks, cross_ref_marks=cross_ref_marks
         )
 
     def _validate_column_totals(
@@ -1549,18 +1527,6 @@ class GenericTableValidator(BaseValidator):
         # Guard: Check if total column index is valid
         if last_col_idx < 0 or last_col_idx >= len(df_numeric.columns):
             return
-
-        flags = get_feature_flags()
-        is_parity_mode = bool(flags.get("legacy_parity_mode", False))
-        if is_parity_mode:
-            # In legacy parity, prefer an explicit Total column even if it isn't last.
-            cols = list(df_numeric.columns)
-            total_like = next(
-                (idx for idx, c in enumerate(cols) if str(c).strip().lower() == "total"),
-                None,
-            )
-            if total_like is not None:
-                last_col_idx = int(total_like)
 
         # Guard: Check if total_row_idx is valid
         if total_row_idx < 0 or total_row_idx >= len(df_numeric):
@@ -1601,12 +1567,7 @@ class GenericTableValidator(BaseValidator):
 
             if not pd.isna(col_total_val) and not pd.isna(row_sum):
                 diff = row_sum - float(col_total_val)
-                if is_parity_mode:
-                    is_ok, _, _, _ = compare_amounts(
-                        row_sum, float(col_total_val), abs_tol=0.0, rel_tol=0.0
-                    )
-                else:
-                    is_ok, _, _, _ = compare_amounts(row_sum, float(col_total_val))
+                is_ok, _, _, _ = compare_amounts(row_sum, float(col_total_val))
 
                 comment = (
                     f"CỘT TỔNG - Dòng {i + 1}: Tính lại={row_sum:,.2f}, "
@@ -1619,7 +1580,6 @@ class GenericTableValidator(BaseValidator):
                         "col": last_col_idx,
                         "ok": is_ok,
                         "comment": None if is_ok else comment,
-                        "rule_id": "COLUMN_TOTAL_VALIDATION",
                     }
                 )
 
@@ -2234,15 +2194,10 @@ class GenericTableValidator(BaseValidator):
                 except (ValueError, IndexError):
                     pass  # Use fallback
 
-            # Prefer detected total row (parity lock); fall back to last row.
-            total_row_idx = self._find_total_row(df, code_cols=[])  # type: ignore[arg-type]
-            if total_row_idx is None:
-                total_row_idx = len(df) - 1
-
             # SCRUM-12: Bounds checking before accessing
             CY_bal = 0.0
             PY_bal = 0.0
-            final_row_idx = int(total_row_idx)
+            final_row_idx = len(df) - 1
 
             if (
                 final_row_idx >= 0
@@ -2382,19 +2337,16 @@ class GenericTableValidator(BaseValidator):
         # Cross-check "net revenue (10 = 01 - 02)"
         account_name = "net revenue (10 = 01 - 02)"
         if account_name:
-            total_row_idx = self._find_total_row(df, code_cols=[])  # type: ignore[arg-type]
-            if total_row_idx is None:
-                total_row_idx = len(df) - 1
-            tr = int(total_row_idx)
-            cy_col = len(df.columns) - 2
-            py_col = len(df.columns) - 1
-
-            CY_bal = df_numeric.iloc[tr, cy_col] if tr < len(df_numeric) else 0
-            PY_bal = df_numeric.iloc[tr, py_col] if tr < len(df_numeric) else 0
-            if pd.isna(CY_bal):
-                CY_bal = 0
-            if pd.isna(PY_bal):
-                PY_bal = 0
+            CY_bal = (
+                df_numeric.iloc[len(df) - 1, len(df.columns) - 2]
+                if not pd.isna(df_numeric.iloc[len(df) - 1, len(df.columns) - 2])
+                else 0
+            )
+            PY_bal = (
+                df_numeric.iloc[len(df) - 1, len(df.columns) - 1]
+                if not pd.isna(df_numeric.iloc[len(df) - 1, len(df.columns) - 1])
+                else 0
+            )
             self.cross_check_with_BSPL(
                 df,
                 cross_ref_marks,
@@ -2402,8 +2354,8 @@ class GenericTableValidator(BaseValidator):
                 account_name,
                 CY_bal,
                 PY_bal,
-                tr,
-                cy_col,
+                len(df) - 1,
+                len(df.columns) - 2,
                 0,
                 -1,
             )

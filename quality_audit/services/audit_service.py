@@ -24,7 +24,6 @@ from ..core.cache_manager import (
     cross_check_marks,
 )
 from ..core.exceptions import FileProcessingError, SecurityError, ValidationError
-from ..core.validators.factory import ValidatorFactory
 from ..io import ExcelWriter, FileHandler
 from ..io.word_reader import AsyncWordReader, WordReader
 from ..utils.skip_classifier import classify_footer_signature
@@ -87,16 +86,44 @@ class AuditService(BaseService):
         self.excel_writer = excel_writer or ExcelWriter()
         self.file_handler = file_handler or FileHandler()
         self.telemetry = TelemetryCollector()
-        # Compatibility surface: some tests/consumers expect this attribute to exist.
-        # Canonical runtime no longer depends on legacy/main.py for correctness.
-        class _LegacyEngineShim:
-            def validate_table(self, *_args: Any, **_kwargs: Any) -> Any:  # pragma: no cover
-                raise NotImplementedError("legacy_engine is a shim for compatibility")
-
-        self.legacy_engine = _LegacyEngineShim()
 
         # Keep cache_manager for backward compatibility (deprecated)
         self.cache_manager = self.context.cache
+
+        # Backward-compatible legacy engine shim for baseline/parity flows.
+        # Some consumers/tests patch service.legacy_engine.validate_table.
+        from ..core.legacy_audit.engine import LegacyAuditEngine
+
+        self.legacy_engine = LegacyAuditEngine(context=self.context)
+
+    @staticmethod
+    def _use_legacy_as_authority(flags: Dict[str, Any]) -> bool:
+        """
+        Determine whether legacy engine should be used as authoritative validator.
+
+        Contract: docs/parity/baseline-policy.md
+        use_legacy_as_authority = baseline_authoritative_default
+            and (legacy_bug_compatibility_mode or legacy_parity_mode)
+        """
+        return bool(flags.get("baseline_authoritative_default", False)) and bool(
+            flags.get("legacy_bug_compatibility_mode", False)
+            or flags.get("legacy_parity_mode", False)
+        )
+
+    @staticmethod
+    def _strip_nonbaseline_routing_hints(
+        table_context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """
+        Remove routing-only hints that are not part of baseline legacy dispatch contract.
+        """
+        ctx = dict(table_context or {})
+        # These hints influence modern routing/merging and must not leak into baseline legacy flows.
+        ctx.pop("statement_family", None)
+        ctx.pop("routing_reason", None)
+        ctx.pop("continuation_confidence", None)
+        ctx.pop("continuation_evidence", None)
+        return ctx
 
     def _reset_run_state(self, word_path: str) -> None:
         """
@@ -107,9 +134,6 @@ class AuditService(BaseService):
         """
         # Preferred run-scoped owner
         self.context.clear()
-        # Clear run-scoped cache to prevent repeated-run state leaks when reusing
-        # the same AuditService/AuditContext instance within a process.
-        self.context.cache.clear()
         self.context.current_filename = str(Path(word_path).absolute())
 
         # Legacy global compatibility
@@ -130,6 +154,26 @@ class AuditService(BaseService):
         except Exception as exc:  # pragma: no cover - best-effort legacy reset
             logger.debug("Unable to reset legacy cross-check globals: %s", exc)
 
+    def _clear_legacy_cross_check_globals_best_effort(self) -> None:
+        """
+        Clear legacy module-level cross-check globals after a run.
+
+        This is best-effort cleanup to prevent cross-file bleed in batch mode
+        when the legacy module remains resident as a singleton.
+        """
+        try:
+            legacy_main = _load_legacy_main_module()
+
+            legacy_cache = getattr(legacy_main, "BSPL_cross_check_cache", None)
+            if isinstance(legacy_cache, dict):
+                legacy_cache.clear()
+
+            legacy_marks = getattr(legacy_main, "BSPL_cross_check_mark", None)
+            if isinstance(legacy_marks, (list, set, dict)):
+                legacy_marks.clear()
+        except Exception as exc:  # pragma: no cover - best-effort cleanup
+            logger.debug("Unable to clear legacy cross-check globals: %s", exc)
+
     def audit_document(self, word_path: str, excel_path: str) -> Dict[str, Any]:
         """
         Execute complete audit workflow.
@@ -143,7 +187,6 @@ class AuditService(BaseService):
         """
         try:
             self._reset_run_state(word_path)
-            self.telemetry.start_run()
 
             # Validate inputs with proper error handling
             if not self.file_handler.validate_path(word_path):
@@ -155,34 +198,63 @@ class AuditService(BaseService):
                     f"Potential Zip Bomb detected or invalid DOCX structure: {word_path}"
                 )
 
-            table_heading_pairs = self.word_reader.read_tables_with_headings(word_path)
-            if not table_heading_pairs:  # pragma: no cover
+            legacy_main = _load_legacy_main_module()
+            table_heading_pairs = legacy_main.read_word_tables_with_headings(word_path)
+            if not table_heading_pairs:
                 raise ValueError("No tables found in Word document")
 
-            # Strip optional per-table context for report output pairing.
-            # Support both 2-tuple (df, heading) and 3-tuple (df, heading, ctx).
-            table_heading_pairs_for_report: List[Tuple[pd.DataFrame, Optional[str]]] = []
-            for pair in table_heading_pairs:
-                if len(pair) >= 2:
-                    table_heading_pairs_for_report.append((pair[0], pair[1]))  # type: ignore[index]
+            # Tax-rate shell contract:
+            # - legacy tax logic remains unchanged in legacy/main.py.
+            # - when shell tax config resolves a rate, provide it via legacy input boundary.
+            resolved_tax_rate = None
+            tax_cfg = getattr(self.context, "tax_rate_config", None)
+            if tax_cfg is not None:
+                try:
+                    base_path = (
+                        getattr(self.context, "base_path", None)
+                        or Path(word_path).parent
+                    )
+                    resolved_tax_rate = tax_cfg.resolve_rate(
+                        Path(word_path), Path(base_path)
+                    )
+                except Exception:
+                    resolved_tax_rate = None
 
-            results = self._validate_tables(table_heading_pairs)
-            self.telemetry.end_run()
-            self._generate_report(
-                table_heading_pairs_for_report,
-                results,
-                excel_path,
-                telemetry=self.telemetry,
+            original_input = None
+            if resolved_tax_rate is not None:
+                original_input = builtins.input
+                builtins.input = lambda prompt="": f"{resolved_tax_rate * 100:g}"
+
+            try:
+                results = [
+                    legacy_main.check_table_total(table, heading)
+                    for table, heading in table_heading_pairs
+                ]
+            finally:
+                if original_input is not None:
+                    builtins.input = original_input
+
+            wb = Workbook()
+            summary_ws = wb.active
+            sheet_positions = legacy_main.write_table_sheet(
+                wb, table_heading_pairs, results
             )
+            legacy_main.write_summary_sheet(summary_ws, results, sheet_positions, wb)
+            wb.save(excel_path)
+
+            # Ensure legacy globals are empty after each run boundary, so the
+            # next file cannot observe stale state.
+            self._clear_legacy_cross_check_globals_best_effort()
 
             return {
                 "success": True,
-                "tables_processed": len(table_heading_pairs_for_report),
+                "tables_processed": len(table_heading_pairs),
                 "results": results,
                 "output_path": excel_path,
             }
 
         except (SecurityError, FileProcessingError, ValidationError) as e:
+            self._clear_legacy_cross_check_globals_best_effort()
             # Return error result for known exceptions
             return {
                 "success": False,
@@ -193,6 +265,7 @@ class AuditService(BaseService):
                 "output_path": None,
             }
         except Exception as e:
+            self._clear_legacy_cross_check_globals_best_effort()
             return {
                 "success": False,
                 "error": f"Unexpected error during audit: {str(e)}",
@@ -233,17 +306,6 @@ class AuditService(BaseService):
                 continue
             normalized_pairs.append((table, heading, table_context))
 
-        # P2-1: Optional pre-build of document-level cash flow registry (run-scoped).
-        flags = get_feature_flags()
-        if bool(flags.get("cashflow_cross_table_context", False)):
-            cashflow_tables = [
-                (t, h, ctx)
-                for (t, h, ctx) in normalized_pairs
-                if "cash flow" in str(h or "").strip().lower()
-            ]
-            if cashflow_tables:
-                self.context.cash_flow_registry = self._build_cf_registry(cashflow_tables)
-
         # Main validation pass (all tables)
         for idx, (table, heading, table_context) in enumerate(normalized_pairs):
             # E2: Start tracking this table
@@ -272,32 +334,8 @@ class AuditService(BaseService):
             # _validate_single_table is now fail-safe and never raises
             result = self._validate_single_table(table, heading, table_context)
 
-            # Observability: mark cross-table usage for cash flow tables when enabled.
-            # (CashFlowValidator consumes AuditContext.cash_flow_registry when present.)
-            if bool(flags.get("cashflow_cross_table_context", False)) and (
-                "cash flow" in str(heading or "").strip().lower()
-            ):
-                if result.context.get("validator_type") == "CashFlowValidator":
-                    result.context["cross_table_used"] = True
-
             # Merge classification context + table context into result.context for observability
             classification_ctx = self.context.get_last_classification_context() or {}
-            primary_type = classification_ctx.get("classifier_primary_type")
-            # Normalize classifier_primary_type to stable, human-readable enum names
-            # expected by plan/golden tests (e.g. "FS_BALANCE_SHEET"), rather than enum values.
-            if isinstance(primary_type, str):
-                from ..core.routing.table_type_classifier import TableType
-
-                _map = {
-                    TableType.FS_BALANCE_SHEET.value: "FS_BALANCE_SHEET",
-                    TableType.FS_INCOME_STATEMENT.value: "FS_INCOME_STATEMENT",
-                    TableType.FS_CASH_FLOW.value: "FS_CASH_FLOW",
-                    TableType.FS_EQUITY.value: "FS_EQUITY",
-                    TableType.TAX_NOTE.value: "TAX_NOTE",
-                    TableType.GENERIC_NOTE.value: "GENERIC_NOTE",
-                    TableType.UNKNOWN.value: "UNKNOWN",
-                }
-                primary_type = _map.get(primary_type, primary_type)
             heading_source = (table_context or {}).get("heading_source")
             excluded_columns = result.context.get("excluded_columns", [])
             scan_rows = classification_ctx.get("scan_rows")
@@ -311,7 +349,6 @@ class AuditService(BaseService):
                     "classifier_confidence"
                 ),
                 "classifier_reason": classification_ctx.get("classifier_reason"),
-                "classifier_primary_type": primary_type,
                 "scan_rows": scan_rows,
                 "validator_type": result.context.get("validator_type"),
                 "excluded_columns": excluded_columns,
@@ -345,17 +382,6 @@ class AuditService(BaseService):
                 enriched_ctx.setdefault("total_row_metadata", total_row_meta)
 
             result.context = enriched_ctx
-
-            # WARN contract: ensure context.reason_code exists and is in WARN_REASON_CODES.
-            if (result.status_enum or "") == "WARN":
-                from ..config.constants import (
-                    WARN_REASON_CODES,
-                    WARN_REASON_STRUCTURE_UNDETERMINED,
-                )
-
-                rc = (result.context or {}).get("reason_code")
-                if rc not in WARN_REASON_CODES:
-                    result.context["reason_code"] = WARN_REASON_STRUCTURE_UNDETERMINED
 
             # Observability: distinguish Validated vs Skipped so skipped tables are not reported as Validated
             rule_id = result.rule_id or ""
@@ -432,17 +458,13 @@ class AuditService(BaseService):
                 "row_type_counts": result.context.get("row_type_counts"),
                 "reason_code": (
                     result.context.get("reason_code")
-                    if (result.status_enum or "") == "WARN"
+                    if validation_status == "WARN"
                     else None
                 ),
             }
             logger.info("Table observability: %s", observability_payload)
 
             result_dict = result.to_dict()
-            # Expose table_type at the top-level for plan/golden tests.
-            result_dict["table_type"] = result_dict.get("table_type") or (
-                (result_dict.get("context") or {}).get("classifier_primary_type")
-            )
             results.append(result_dict)
 
             # E2: End tracking this table and record metrics
@@ -450,63 +472,6 @@ class AuditService(BaseService):
             self.telemetry.end_table(table, heading, validator_type, result_dict)
 
         return results
-
-    def _build_cf_registry(
-        self, tables: List[Tuple[pd.DataFrame, Optional[str], Dict]]
-    ) -> Dict[str, tuple[float, float]]:
-        """
-        Build a document-level registry for Cash Flow codes: code -> (CY, PY).
-
-        Input tuples are (df, heading, table_context). The registry is run-scoped and
-        must be safe to recompute deterministically from table content.
-        """
-        from ..utils.numeric_utils import parse_numeric
-        from ..utils.table_normalizer import TableNormalizer
-
-        registry: Dict[str, tuple[float, float]] = {}
-        code_re = re.compile(r"^[0-9]{1,4}[A-Z]?$")
-
-        for df, _heading, _ctx in tables:
-            if df is None or df.empty:
-                continue
-
-            code_col = next(
-                (c for c in df.columns if str(c).strip().lower() == "code"), None
-            )
-            if not code_col:
-                code_col = TableNormalizer._detect_code_column_with_synonyms(df)
-            if not code_col:
-                continue
-
-            cy_col = next(
-                (c for c in df.columns if str(c).strip().upper() == "CY"), None
-            )
-            py_col = next(
-                (c for c in df.columns if str(c).strip().upper() == "PY"), None
-            )
-            if not (cy_col and py_col):
-                # Minimal fallback: attempt to pick numeric columns excluding code-like columns.
-                candidate_cols = [c for c in df.columns if c != code_col]
-                if len(candidate_cols) >= 2:
-                    from ..utils.column_detector import ColumnDetector
-
-                    cy_col, py_col = ColumnDetector.detect_financial_columns_advanced(
-                        df[candidate_cols]
-                    )
-            if not (cy_col and py_col):
-                continue
-
-            for _, row in df.iterrows():
-                raw = str(row.get(code_col, "")).strip()
-                code = re.sub(r"\s+", "", raw)
-                if not code or not code_re.match(code):
-                    continue
-                cy = float(parse_numeric(row.get(cy_col, "")) or 0.0)
-                py = float(parse_numeric(row.get(py_col, "")) or 0.0)
-                prev_cy, prev_py = registry.get(code, (0.0, 0.0))
-                registry[code] = (prev_cy + cy, prev_py + py)
-
-        return registry
 
     def _validate_single_table(
         self,
@@ -521,49 +486,27 @@ class AuditService(BaseService):
 
         from ..core.validators.base_validator import ValidationResult
 
-        # Legacy compatibility path: allow routing through legacy_engine for baseline-authoritative
-        # flows while stripping non-baseline routing hints from table_context.
-        try:
-            flags = get_feature_flags()
-            if bool(flags.get("baseline_authoritative_default", False)) and bool(
-                flags.get("legacy_bug_compatibility_mode", False)
-            ):
-                ctx = dict(table_context or {})
-                # Remove non-baseline routing hints; keep statement_group_id for grouping continuity.
-                for k in [
-                    "statement_family",
-                    "routing_reason",
-                    "continuation_confidence",
-                    "continuation_evidence",
-                ]:
-                    ctx.pop(k, None)
-                legacy_result = self.legacy_engine.validate_table(
-                    table, heading, table_context=ctx
-                )
-                if isinstance(legacy_result, ValidationResult):
-                    if "validator_type" not in legacy_result.context:
-                        legacy_result.context["validator_type"] = "LegacyEngine"
-                    return legacy_result
-        except Exception:
-            # Fall through to canonical validator path (legacy_engine is best-effort).
-            pass
-
         # Get appropriate validator
         try:
+            # Baseline/legacy-authoritative dispatch (backward compatibility).
+            flags = get_feature_flags()
+            if self._use_legacy_as_authority(flags):
+                legacy_ctx = self._strip_nonbaseline_routing_hints(table_context)
+                return self.legacy_engine.validate_table(
+                    table, heading, table_context=legacy_ctx
+                )
+
+            # Non-runtime validator stack is imported lazily to keep
+            # production canonical path decoupled from modular owners.
+            from ..core.validators.factory import ValidatorFactory
+
             validator, skip_reason = ValidatorFactory.get_validator(
                 table, heading, context=self.context, table_context=table_context
             )
             if validator is None:
                 # Determine rule_id and status message based on skip_reason
                 if skip_reason == "SKIPPED_NO_NUMERIC_EVIDENCE":
-                    # Parity contract: "no numeric dispatch" is INFO with rule_id NO_NUMERIC_EVIDENCE
-                    # (not a SKIPPED_* marker).
-                    flags = get_feature_flags()
-                    rule_id = (
-                        "NO_NUMERIC_EVIDENCE"
-                        if bool(flags.get("legacy_parity_mode"))
-                        else "SKIPPED_NO_NUMERIC_EVIDENCE"
-                    )
+                    rule_id = "SKIPPED_NO_NUMERIC_EVIDENCE"
                     status_msg = "INFO: Table bị skip (không đủ bằng chứng số)"
                     reason_desc = "BalanceSheet table skipped due to insufficient numeric evidence"
                 else:
@@ -611,17 +554,7 @@ class AuditService(BaseService):
 
         # Validate table with fail-safe wrapper
         try:
-            # Observability: inject heading into df.attrs for validators, then restore.
-            _orig_attrs = dict(getattr(table, "attrs", {}) or {})
-            try:
-                table.attrs["heading"] = heading
-                result = validator.validate(table, heading, table_context=table_context)
-            finally:
-                try:
-                    table.attrs.clear()
-                    table.attrs.update(_orig_attrs)
-                except Exception:
-                    pass
+            result = validator.validate(table, heading, table_context=table_context)
             if not result.rule_id or result.rule_id == "UNKNOWN":
                 result.rule_id = f"{validator_type}_VALIDATION"
             if "validator_type" not in result.context:
@@ -773,7 +706,10 @@ class AuditService(BaseService):
         # self.file_handler.open_file_safely(excel_path)  # Moved to UI layer control
 
     async def process_document_async(
-        self, word_path: str, excel_path: str
+        self,
+        word_path: str,
+        excel_path: str,
+        legacy_lock: Optional[asyncio.Lock] = None,
     ) -> Dict[str, Any]:
         """
         Async shell entrypoint for canonical runtime.
@@ -781,4 +717,8 @@ class AuditService(BaseService):
         Production correctness is intentionally delegated to the same single-path
         legacy canonical flow used by audit_document().
         """
-        return await asyncio.to_thread(self.audit_document, word_path, excel_path)
+        if legacy_lock is None:
+            return await asyncio.to_thread(self.audit_document, word_path, excel_path)
+
+        async with legacy_lock:
+            return await asyncio.to_thread(self.audit_document, word_path, excel_path)

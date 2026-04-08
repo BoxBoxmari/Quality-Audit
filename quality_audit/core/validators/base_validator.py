@@ -506,15 +506,6 @@ class BaseValidator(ABC):
             result.context = {}
         if assertions_count == 0:
             flags = get_feature_flags()
-            # Parity mode: do not allow PASS with zero assertions, regardless of policy.
-            if flags.get("legacy_parity_mode", False):
-                result.status_enum = "INFO_SKIPPED"
-                result.status = "INFO_SKIPPED: No assertions executed"
-                result.context["failure_reason_code"] = "NO_ASSERTIONS"
-                logger.info(
-                    "PASS gating: overrode to INFO_SKIPPED (legacy_parity_mode=True, assertions_count=0)"
-                )
-                return result
             if flags.get("treat_no_assertion_as_pass", False):
                 result.context["no_assertion_reason"] = result.context.get(
                     "no_assertion_reason", "NOT_APPLICABLE"
@@ -1324,10 +1315,6 @@ class BaseValidator(ABC):
                 if amount_cols
                 else [c for c in df.columns if c not in label_cols and c not in exclude]
             )
-            # If classification left us with nothing to check (e.g., mixed dtype columns),
-            # fall back to scanning all non-excluded columns for numeric evidence.
-            if not cols_to_check:
-                cols_to_check = [c for c in df.columns if c not in exclude]
             for j in range(row_idx):
                 for c in cols_to_check:
                     if c in exclude:
@@ -1419,32 +1406,6 @@ class BaseValidator(ABC):
             if passing:
                 best = max(passing, key=lambda x: (x[1], -x[2]))
                 idx = best[0]
-
-                # Legacy parity lock: for accrued/deferred headings, if there's an early
-                # empty-separator row, force the total row to the last numeric row.
-                heading_hint = str(df.attrs.get("heading", "")).lower().strip()
-                is_parity_mode = bool(flags.get("legacy_parity_mode", False))
-                tighten_keywords = bool(flags.get("tighten_total_row_keywords", False))
-                if (
-                    is_parity_mode
-                    and tighten_keywords
-                    and ("accrued" in heading_hint or "deferred" in heading_hint)
-                ):
-                    def _is_empty_row_parity(row: pd.Series) -> bool:
-                        for v in row.values:
-                            if pd.isna(v):
-                                continue
-                            if str(v).strip():
-                                return False
-                        return True
-
-                    has_early_separator = any(
-                        _is_empty_row_parity(df.iloc[i]) for i in range(max(n - 2, 0))
-                    )
-                    if has_early_separator and numeric_rows:
-                        forced = max(numeric_rows)
-                        if forced > 0 and _has_detail_rows_above(forced):
-                            idx = forced
                 logger.info(
                     "Total row candidate selected: idx=%s, method=keyword_total_row, candidates=%s",
                     idx,
@@ -1645,14 +1606,6 @@ class BaseValidator(ABC):
         """
         cache = self.cache_manager or cross_check_cache
         cached_value = cache.get(account_name)
-        # Parity: allow canonical keys (en-dash) to match ASCII-hyphen cache keys.
-        # Use a tolerant replacement because some sources omit surrounding spaces.
-        if (
-            cached_value is None
-            and isinstance(account_name, str)
-            and "–" in account_name
-        ):
-            cached_value = cache.get(account_name.replace("–", "-"))
         if cached_value is None:
             return  # No cached value to compare against
 
@@ -1674,17 +1627,11 @@ class BaseValidator(ABC):
                     return True
             return False
 
-        flags = get_feature_flags()
-        is_parity_mode = bool(flags.get("legacy_parity_mode", False))
-
-        if not is_parity_mode:
-            if _is_suspicious_magnitude(
-                CY_bal, BSPL_CY_bal
-            ) or _is_suspicious_magnitude(PY_bal, BSPL_PY_bal):
-                logger.debug(
-                    f"Cross-check blocked by magnitude check for {account_name}"
-                )
-                return
+        if _is_suspicious_magnitude(CY_bal, BSPL_CY_bal) or _is_suspicious_magnitude(
+            PY_bal, BSPL_PY_bal
+        ):
+            logger.debug(f"Cross-check blocked by magnitude check for {account_name}")
+            return
 
         # Ticket 9: Section Constraint Validation (Whitelist check)
         # Prevent "Chi phí trả trước" (Short-term) checking against "Chi phí trả trước" (Long-term)
@@ -1717,12 +1664,11 @@ class BaseValidator(ABC):
 
         # Extract table heading from dataframe context if injected by higher level
         current_heading = df.attrs.get("heading", "")
-        if not is_parity_mode:
-            if not _validate_section_alignment(account_name, current_heading):
-                logger.debug(
-                    f"Cross-check blocked by section constraint alignment check for {account_name}"
-                )
-                return
+        if not _validate_section_alignment(account_name, current_heading):
+            logger.debug(
+                f"Cross-check blocked by section constraint alignment check for {account_name}"
+            )
+            return
 
         # P2-L2: Relaxed cross-check for minor diffs (allow +/- 1.0 for rounding)
         TOLERANCE = 1.0

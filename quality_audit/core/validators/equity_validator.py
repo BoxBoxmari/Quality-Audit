@@ -720,7 +720,7 @@ class EquityValidator(BaseValidator):
                 assertions_count=0,
             )
 
-        role_evidence: dict[str, object] = {}
+        role_evidence = {}
         numeric_columns = []
         for c in list(df.columns)[1:]:
             series = pd.to_numeric(df_numeric[c], errors="coerce")

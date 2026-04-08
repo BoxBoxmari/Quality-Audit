@@ -1,8 +1,0 @@
-legacy_source,legacy_region,rule_family,current_file,current_symbol,parity_status,action_required
-legacy/main.py,CATALOGS,form_union_catalogs,quality_audit/core/legacy_audit/catalogs.py,CROSS_CHECK_TABLES_FORM_1A|CROSS_CHECK_TABLES_FORM_1B|CROSS_CHECK_TABLES_FORM_3,PORTED,VERIFY
-legacy/main.py,CODES,valid_codes_union,quality_audit/core/legacy_audit/codes.py,VALID_CODES(234|235|241|242),PORTED,VERIFY
-legacy/Quality Audit.py,HEADING_ROUTING,simple_heading_family,quality_audit/core/legacy_audit/headings.py,HEADING_ALIASES,PORTED,VERIFY
-legacy_union,DEFAULT_RUNTIME,baseline_engine_path,quality_audit/core/legacy_audit/engine.py,LegacyAuditEngine.validate_table,PORTED,VERIFY
-legacy_union,DEFAULT_RUNTIME,baseline_router_path,quality_audit/core/legacy_audit/router.py,route_table,PORTED,VERIFY
-legacy_union,SERVICE_ORCHESTRATION,default_decision_owner,quality_audit/services/audit_service.py,_validate_single_table(baseline_authoritative_default),PORTED,VERIFY
-legacy_union,BOUNDARY,no_direct_legacy_import,quality_audit/core/legacy_audit/*,ported_modules_only,PORTED,ENFORCE

@@ -665,9 +665,6 @@ def _split_segments(
         has_mov = len(movement_rows) >= 1
         fallback_movement = False
         if has_ob and has_cb and not has_mov:
-            # mypy: narrow Optional[int] to int for range() usage.
-            assert ob_idx is not None
-            assert cb_idx is not None
             _excluded = (
                 RowType.BLANK,
                 RowType.SECTION_HEADER,

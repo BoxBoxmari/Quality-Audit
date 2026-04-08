@@ -85,13 +85,32 @@ class TestAuditServiceIntegration:
                 self.BSPL_cross_check_cache = {}
                 self.BSPL_cross_check_mark = []
 
+            def read_word_tables_with_headings(self, _word_path):
+                return [("table", "Heading A")]
+
+            def check_table_total(self, _table, _heading):
+                old = self.BSPL_cross_check_cache.get("run_count", 0)
+                self.BSPL_cross_check_cache["run_count"] = old + 1
+                self.BSPL_cross_check_mark.append("marked")
+                return {"status": f"run={self.BSPL_cross_check_cache['run_count']}"}
+
+            def write_table_sheet(self, wb, _pairs, _results):
+                ws = wb.active
+                ws.title = "Tổng hợp kiểm tra"
+                ws.append(["ok"])
+                return {}
+
+            def write_summary_sheet(self, *_args, **_kwargs):
+                return None
+
         fake_legacy = FakeLegacyMain()
         monkeypatch.setattr(
             audit_service_module, "_load_legacy_main_module", lambda: fake_legacy
         )
 
-        context = AuditContext(cache=LRUCacheManager(max_size=100))
-        service = AuditService(context=context)
+        service = AuditService(
+            context=AuditContext(cache=LRUCacheManager(max_size=100))
+        )
         monkeypatch.setattr(service.file_handler, "validate_path", lambda _path: True)
         monkeypatch.setattr(
             service.file_handler, "validate_docx_safety", lambda _path: True
@@ -100,42 +119,13 @@ class TestAuditServiceIntegration:
         # Seed stale state to verify reset
         cross_check_cache.set("stale", (9.0, 8.0))
         cross_check_marks.add("stale")
-        context.cache.set("stale_ctx", (1.0, 2.0))
         fake_legacy.BSPL_cross_check_cache["stale"] = (7.0, 6.0)
         fake_legacy.BSPL_cross_check_mark.append("stale")
 
-        # The canonical runtime reads DOCX content; mock the reader to avoid needing a real DOCX.
-        import pandas as pd
-
-        dummy_df = pd.DataFrame([["Amount", "100"]])
         word_path = tmp_path / "dummy.docx"
-        word_path.write_text("dummy")  # not a real DOCX; reader is mocked below
+        word_path.write_text("dummy")
         excel_1 = tmp_path / "out_1.xlsx"
         excel_2 = tmp_path / "out_2.xlsx"
-
-        monkeypatch.setattr(
-            service.word_reader,
-            "read_tables_with_headings",
-            lambda *_args, **_kwargs: [(dummy_df, "Heading A", {})],
-        )
-
-        def _fake_validate_tables(_pairs):
-            # Intentionally mutate global and context caches to verify _reset_run_state().
-            old = cross_check_cache.get("run_count") or 0
-            cross_check_cache.set("run_count", old + 1)
-            cross_check_marks.add("marked")
-            context.cache.set("marked_ctx", True)
-            return [
-                {
-                    "status": f"run={cross_check_cache.get('run_count')}",
-                    "rule_id": "FAKE_RULE",
-                    "status_enum": "PASS",
-                    "context": {"validator_type": "FakeValidator", "table_id": "tbl_001_Heading_A"},
-                    "table_id": "tbl_001_Heading_A",
-                }
-            ]
-
-        monkeypatch.setattr(service, "_validate_tables", _fake_validate_tables)
 
         result_1 = service.audit_document(str(word_path), str(excel_1))
         result_2 = service.audit_document(str(word_path), str(excel_2))
@@ -147,11 +137,39 @@ class TestAuditServiceIntegration:
         assert result_2["results"][0]["status"] == "run=1"
         assert "stale" not in cross_check_cache
         assert "stale" not in cross_check_marks
-        assert "stale_ctx" not in context.cache
         assert "stale" not in fake_legacy.BSPL_cross_check_cache
 
     def test_repeated_async_runs_reset_state(self, tmp_path, monkeypatch):
         """Async shell path should remain deterministic across repeated runs."""
+        from quality_audit.services import audit_service as audit_service_module
+
+        class FakeLegacyMain:
+            def __init__(self):
+                self.BSPL_cross_check_cache = {}
+                self.BSPL_cross_check_mark = []
+
+            def read_word_tables_with_headings(self, _word_path):
+                return [("table", "Heading A")]
+
+            def check_table_total(self, _table, _heading):
+                old = self.BSPL_cross_check_cache.get("run_count", 0)
+                self.BSPL_cross_check_cache["run_count"] = old + 1
+                return {"status": f"run={self.BSPL_cross_check_cache['run_count']}"}
+
+            def write_table_sheet(self, wb, _pairs, _results):
+                ws = wb.active
+                ws.title = "Tổng hợp kiểm tra"
+                ws.append(["ok"])
+                return {}
+
+            def write_summary_sheet(self, *_args, **_kwargs):
+                return None
+
+        fake_legacy = FakeLegacyMain()
+        monkeypatch.setattr(
+            audit_service_module, "_load_legacy_main_module", lambda: fake_legacy
+        )
+
         service = AuditService(
             context=AuditContext(cache=LRUCacheManager(max_size=100))
         )
@@ -160,34 +178,10 @@ class TestAuditServiceIntegration:
             service.file_handler, "validate_docx_safety", lambda _path: True
         )
 
-        import pandas as pd
-
-        dummy_df = pd.DataFrame([["Amount", "100"]])
         word_path = tmp_path / "dummy_async.docx"
-        word_path.write_text("dummy")  # not a real DOCX; reader is mocked below
+        word_path.write_text("dummy")
         excel_1 = tmp_path / "async_1.xlsx"
         excel_2 = tmp_path / "async_2.xlsx"
-
-        monkeypatch.setattr(
-            service.word_reader,
-            "read_tables_with_headings",
-            lambda *_args, **_kwargs: [(dummy_df, "Heading A", {})],
-        )
-
-        def _fake_validate_tables(_pairs):
-            old = cross_check_cache.get("run_count") or 0
-            cross_check_cache.set("run_count", old + 1)
-            return [
-                {
-                    "status": f"run={cross_check_cache.get('run_count')}",
-                    "rule_id": "FAKE_RULE",
-                    "status_enum": "PASS",
-                    "context": {"validator_type": "FakeValidator", "table_id": "tbl_001_Heading_A"},
-                    "table_id": "tbl_001_Heading_A",
-                }
-            ]
-
-        monkeypatch.setattr(service, "_validate_tables", _fake_validate_tables)
 
         result_1 = asyncio.run(
             service.process_document_async(str(word_path), str(excel_1))

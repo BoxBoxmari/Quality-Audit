@@ -88,16 +88,6 @@ class IncomeStatementValidator(BaseValidator):
                 code_col = TableNormalizer._detect_code_column_with_synonyms(df_norm)
             if not code_col and "__canonical_code__" in df_norm.columns:
                 code_col = "__canonical_code__"
-            # Guardrail: if an explicit "Code" header exists, prefer it over any
-            # inferred non-code column selected by heuristics.
-            explicit_code_col = next(
-                (c for c in df_norm.columns if str(c).strip().lower() == "code"), None
-            )
-            if explicit_code_col is not None and (
-                code_col is None or str(code_col).strip().lower() != "code"
-            ):
-                code_col = explicit_code_col
-                declared_code_col = explicit_code_col
 
             if not code_col:
                 canon = metadata.get("canon_report") or {}
